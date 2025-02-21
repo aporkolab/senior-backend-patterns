@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.aporkolab</groupId>
+        <artifactId>senior-backend-patterns</artifactId>
+        <version>1.0.0</version>
+    </parent>
+
+    <artifactId>metrics</artifactId>
+    <name>Metrics</name>
+    <description>Micrometer metrics instrumentation for all patterns</description>
+
+    <dependencies>
+        <!-- Project modules -->
+        <dependency>
+            <groupId>com.aporkolab</groupId>
+            <artifactId>circuit-breaker</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.aporkolab</groupId>
+            <artifactId>dead-letter-queue</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <!-- Micrometer -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-core</artifactId>
+            <version>1.12.2</version>
+        </dependency>
+
+        <!-- Optional: Prometheus registry -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+            <version>1.12.2</version>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- Testing -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-test</artifactId>
+            <version>1.12.2</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>
