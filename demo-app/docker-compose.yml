@@ -1,0 +1,181 @@
+version: '3.8'
+
+
+
+
+
+
+
+
+
+
+
+
+
+services:
+  
+  
+  
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: patterns-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ordersdb
+    ports:
+      - "${POSTGRES_PORT:-15432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    container_name: patterns-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "${ZOOKEEPER_PORT:-12181}:2181"
+
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: patterns-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "${KAFKA_PORT:-19092}:9092"
+      - "${KAFKA_INTERNAL_PORT:-19093}:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:${KAFKA_PORT:-19092}
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    healthcheck:
+      test: ["CMD-SHELL", "cub kafka-ready -b kafka:29092 1 5 || exit 1"]
+      interval: 10s
+      timeout: 30s
+      retries: 5
+      start_period: 30s
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: patterns-kafka-ui
+    depends_on:
+      - kafka
+    ports:
+      - "${KAFKA_UI_PORT:-18090}:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+
+  
+  
+  
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: patterns-prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-19090}:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: patterns-grafana
+    depends_on:
+      - prometheus
+    ports:
+      - "${GRAFANA_PORT:-13000}:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources
+
+  
+  
+  
+
+  order-service:
+    build:
+      context: ./order-service
+      dockerfile: Dockerfile
+    container_name: patterns-order-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    ports:
+      - "${ORDER_SERVICE_PORT:-18081}:8081"
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ordersdb
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  payment-service:
+    build:
+      context: ./payment-service
+      dockerfile: Dockerfile
+    container_name: patterns-payment-service
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "${PAYMENT_SERVICE_PORT:-18082}:8082"
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  notification-service:
+    build:
+      context: ./notification-service
+      dockerfile: Dockerfile
+    container_name: patterns-notification-service
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "${NOTIFICATION_SERVICE_PORT:-18083}:8083"
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8083/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  postgres-data:
+  grafana-data:
+
+networks:
+  default:
+    name: patterns-network
