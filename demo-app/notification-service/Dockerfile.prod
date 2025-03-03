@@ -1,0 +1,40 @@
+# =============================================================================
+# NOTIFICATION SERVICE - PRODUCTION DOCKERFILE
+# =============================================================================
+# Assumes JAR is pre-built (e.g., by CI/CD pipeline)
+# Build: docker build -f Dockerfile.prod -t notification-service:prod .
+# =============================================================================
+
+FROM eclipse-temurin:21-jre-alpine AS runtime
+
+# Security: Run as non-root user
+RUN addgroup -g 1000 appgroup && \
+    adduser -u 1000 -G appgroup -D appuser
+
+WORKDIR /app
+
+# Install curl for healthchecks
+RUN apk add --no-cache curl
+
+# Copy pre-built JAR
+COPY target/*.jar app.jar
+
+# Set ownership
+RUN chown -R appuser:appgroup /app
+
+# Switch to non-root user
+USER appuser
+
+# JVM Configuration for production
+ENV JAVA_OPTS="-Xms256m -Xmx512m \
+    -XX:+UseG1GC \
+    -XX:MaxGCPauseMillis=100 \
+    -Djava.security.egd=file:/dev/./urandom"
+
+EXPOSE 8083
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8083/actuator/health || exit 1
+
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
