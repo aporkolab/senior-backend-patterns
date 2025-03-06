@@ -1,0 +1,31 @@
+apiVersion: v2
+name: senior-patterns
+description: A Helm chart for Senior Backend Patterns demo application
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+
+keywords:
+  - microservices
+  - circuit-breaker
+  - outbox-pattern
+  - rate-limiter
+  - spring-boot
+
+home: https://github.com/aporkolab/senior-backend-patterns
+sources:
+  - https://github.com/aporkolab/senior-backend-patterns
+
+maintainers:
+  - name: Ádám Porkoláb
+    email: adam@porkolab.dev
+
+dependencies:
+  - name: postgresql
+    version: "13.2.24"
+    repository: https://charts.bitnami.com/bitnami
+    condition: postgresql.enabled
+  - name: kafka
+    version: "26.6.2"
+    repository: https://charts.bitnami.com/bitnami
+    condition: kafka.enabled

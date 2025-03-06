@@ -1,0 +1,148 @@
+# Default values for senior-patterns
+# This is a YAML-formatted file.
+
+# Global settings
+global:
+  imageRegistry: ""
+  imagePullSecrets: []
+
+# Order Service
+orderService:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: aporkolab/order-service
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 8081
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+
+# Payment Service
+paymentService:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: aporkolab/payment-service
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 8082
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+
+# Notification Service
+notificationService:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: aporkolab/notification-service
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 8083
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+
+# Pattern Configuration
+patterns:
+  circuitBreaker:
+    failureThreshold: 5
+    successThreshold: 3
+    openDurationMs: 30000
+  rateLimiter:
+    algorithm: TOKEN_BUCKET
+    capacity: 100
+    refillRate: 10
+    refillPeriodMs: 1000
+  outbox:
+    batchSize: 100
+    pollIntervalMs: 1000
+    cleanupAfterDays: 7
+  dlq:
+    maxRetries: 3
+    topicSuffix: ".dlq"
+
+# Infrastructure dependencies
+postgresql:
+  enabled: true
+  auth:
+    username: patterns
+    password: patterns123
+    database: patternsdb
+  primary:
+    persistence:
+      size: 8Gi
+
+kafka:
+  enabled: true
+  listeners:
+    client:
+      protocol: PLAINTEXT
+  controller:
+    replicaCount: 1
+
+# Observability
+prometheus:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    interval: 15s
+
+grafana:
+  enabled: false
+  dashboards:
+    enabled: true
+
+# Ingress
+ingress:
+  enabled: false
+  className: nginx
+  annotations: {}
+  hosts:
+    - host: patterns.local
+      paths:
+        - path: /orders
+          pathType: Prefix
+          service: order-service
+        - path: /payments
+          pathType: Prefix
+          service: payment-service
+  tls: []
+
+# Pod Disruption Budget
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Network Policies
+networkPolicy:
+  enabled: false
