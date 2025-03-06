@@ -1,0 +1,62 @@
+{{- if .Values.orderService.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-service
+  labels:
+    {{- include "senior-patterns.labels" . | nindent 4 }}
+    app.kubernetes.io/component: order-service
+spec:
+  type: {{ .Values.orderService.service.type }}
+  ports:
+    - port: {{ .Values.orderService.service.port }}
+      targetPort: {{ .Values.orderService.service.targetPort }}
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "senior-patterns.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: order-service
+{{- end }}
+
+{{- if .Values.paymentService.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-service
+  labels:
+    {{- include "senior-patterns.labels" . | nindent 4 }}
+    app.kubernetes.io/component: payment-service
+spec:
+  type: {{ .Values.paymentService.service.type }}
+  ports:
+    - port: {{ .Values.paymentService.service.port }}
+      targetPort: {{ .Values.paymentService.service.targetPort }}
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "senior-patterns.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: payment-service
+{{- end }}
+
+{{- if .Values.notificationService.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-service
+  labels:
+    {{- include "senior-patterns.labels" . | nindent 4 }}
+    app.kubernetes.io/component: notification-service
+spec:
+  type: {{ .Values.notificationService.service.type }}
+  ports:
+    - port: {{ .Values.notificationService.service.port }}
+      targetPort: {{ .Values.notificationService.service.targetPort }}
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "senior-patterns.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: notification-service
+{{- end }}

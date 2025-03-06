@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "senior-patterns.fullname" . }}-config
+  labels:
+    {{- include "senior-patterns.labels" . | nindent 4 }}
+data:
+  # Circuit Breaker Configuration
+  CIRCUIT_BREAKER_FAILURE_THRESHOLD: {{ .Values.patterns.circuitBreaker.failureThreshold | quote }}
+  CIRCUIT_BREAKER_SUCCESS_THRESHOLD: {{ .Values.patterns.circuitBreaker.successThreshold | quote }}
+  CIRCUIT_BREAKER_OPEN_DURATION_MS: {{ .Values.patterns.circuitBreaker.openDurationMs | quote }}
+  
+  # Rate Limiter Configuration
+  RATE_LIMITER_ALGORITHM: {{ .Values.patterns.rateLimiter.algorithm | quote }}
+  RATE_LIMITER_CAPACITY: {{ .Values.patterns.rateLimiter.capacity | quote }}
+  RATE_LIMITER_REFILL_RATE: {{ .Values.patterns.rateLimiter.refillRate | quote }}
+  RATE_LIMITER_REFILL_PERIOD_MS: {{ .Values.patterns.rateLimiter.refillPeriodMs | quote }}
+  
+  # Outbox Pattern Configuration
+  OUTBOX_BATCH_SIZE: {{ .Values.patterns.outbox.batchSize | quote }}
+  OUTBOX_POLL_INTERVAL_MS: {{ .Values.patterns.outbox.pollIntervalMs | quote }}
+  OUTBOX_CLEANUP_AFTER_DAYS: {{ .Values.patterns.outbox.cleanupAfterDays | quote }}
+  
+  # DLQ Configuration
+  DLQ_MAX_RETRIES: {{ .Values.patterns.dlq.maxRetries | quote }}
+  DLQ_TOPIC_SUFFIX: {{ .Values.patterns.dlq.topicSuffix | quote }}
+  
+  # Database Configuration
+  {{- if .Values.postgresql.enabled }}
+  SPRING_DATASOURCE_URL: "jdbc:postgresql://{{ .Release.Name }}-postgresql:5432/{{ .Values.postgresql.auth.database }}"
+  SPRING_DATASOURCE_USERNAME: {{ .Values.postgresql.auth.username | quote }}
+  {{- end }}
+  
+  # Kafka Configuration
+  {{- if .Values.kafka.enabled }}
+  SPRING_KAFKA_BOOTSTRAP_SERVERS: "{{ .Release.Name }}-kafka:9092"
+  {{- end }}
