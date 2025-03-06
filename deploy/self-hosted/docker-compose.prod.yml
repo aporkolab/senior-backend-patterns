@@ -1,0 +1,339 @@
+version: '3.8'
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+services:
+  
+  
+  
+  
+  nginx:
+    image: nginx:alpine
+    container_name: patterns-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
+      - ./certbot/www:/var/www/certbot:ro
+    depends_on:
+      - order-service
+      - payment-service
+      - notification-service
+      - grafana
+    networks:
+      - patterns-network
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  certbot:
+    image: certbot/certbot
+    container_name: patterns-certbot
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+
+  
+  
+  
+  
+  postgres:
+    image: postgres:15-alpine
+    container_name: patterns-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-patterns}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      POSTGRES_DB: ${DB_NAME:-patternsdb}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - patterns-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-patterns}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  redis:
+    image: redis:7-alpine
+    container_name: patterns-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    volumes:
+      - redis-data:/data
+    networks:
+      - patterns-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  
+  
+  
+  
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    container_name: patterns-zookeeper
+    restart: unless-stopped
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+      - zookeeper-logs:/var/lib/zookeeper/log
+    networks:
+      - patterns-network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: patterns-kafka
+    restart: unless-stopped
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_LOG_RETENTION_BYTES: 1073741824
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    networks:
+      - patterns-network
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:29092"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: patterns-kafka-ui
+    restart: unless-stopped
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_CLUSTERS_0_NAME: production
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      SERVER_SERVLET_CONTEXT_PATH: /kafka-ui
+      AUTH_TYPE: LOGIN_FORM
+      SPRING_SECURITY_USER_NAME: ${KAFKA_UI_USER:-admin}
+      SPRING_SECURITY_USER_PASSWORD: ${KAFKA_UI_PASSWORD:?KAFKA_UI_PASSWORD is required}
+    networks:
+      - patterns-network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  
+  
+  
+  
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: patterns-prometheus
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.external-url=/prometheus/'
+      - '--web.route-prefix=/prometheus/'
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - patterns-network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: patterns-grafana
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    environment:
+      GF_SERVER_ROOT_URL: https://${DOMAIN}/grafana/
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?GRAFANA_PASSWORD is required}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    networks:
+      - patterns-network
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  
+  
+  
+  
+  order-service:
+    build:
+      context: ../../demo-app/order-service
+      dockerfile: Dockerfile.prod
+    image: aporkolab/order-service:${VERSION:-latest}
+    container_name: patterns-order-service
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-patternsdb}
+      DB_USER: ${DB_USER:-patterns}
+      DB_PASSWORD: ${DB_PASSWORD}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SERVER_SERVLET_CONTEXT_PATH: /order
+      JAVA_OPTS: "-Xms256m -Xmx512m -XX:+UseG1GC"
+    networks:
+      - patterns-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/order/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+
+  payment-service:
+    build:
+      context: ../../demo-app/payment-service
+      dockerfile: Dockerfile.prod
+    image: aporkolab/payment-service:${VERSION:-latest}
+    container_name: patterns-payment-service
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SERVER_SERVLET_CONTEXT_PATH: /payment
+      JAVA_OPTS: "-Xms256m -Xmx512m -XX:+UseG1GC"
+    networks:
+      - patterns-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/payment/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+
+  notification-service:
+    build:
+      context: ../../demo-app/notification-service
+      dockerfile: Dockerfile.prod
+    image: aporkolab/notification-service:${VERSION:-latest}
+    container_name: patterns-notification-service
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SERVER_SERVLET_CONTEXT_PATH: /notification
+      JAVA_OPTS: "-Xms256m -Xmx512m -XX:+UseG1GC"
+    networks:
+      - patterns-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8083/notification/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+
+
+
+
+
+volumes:
+  postgres-data:
+  redis-data:
+  zookeeper-data:
+  zookeeper-logs:
+  kafka-data:
+  prometheus-data:
+  grafana-data:
+
+
+
+
+
+networks:
+  patterns-network:
+    driver: bridge
