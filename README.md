@@ -1,66 +1,356 @@
 # Senior Backend Patterns
 
-Production-tested patterns I use in real-world backend systems. Not tutorials — **working skeletons** ready to copy into projects.
+[![CI Build](https://github.com/aporkolab/senior-backend-patterns/actions/workflows/ci.yml/badge.svg)](https://github.com/aporkolab/senior-backend-patterns/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/aporkolab/senior-backend-patterns/branch/main/graph/badge.svg)](https://codecov.io/gh/aporkolab/senior-backend-patterns)
+[![Java 21](https://img.shields.io/badge/Java-21-blue.svg)](https://openjdk.org/projects/jdk/21/)
+[![Spring Boot 3.2](https://img.shields.io/badge/Spring%20Boot-3.2-brightgreen.svg)](https://spring.io/projects/spring-boot)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## What's Inside
+> **Production-grade backend patterns** for building resilient, observable, and scalable microservices.
 
-| Pattern | Purpose | Key Insight |
-|---------|---------|-------------|
-| [Resilient HTTP Client](resilient-http-client/) | Retry + exponential backoff + timeout | Don't trust the network |
-| [Circuit Breaker](circuit-breaker/) | Fail-fast under pressure | Protect downstream services |
-| [Dead Letter Queue](dead-letter-queue/) | Handle poison messages | Never lose data silently |
-| [Outbox Pattern](outbox-pattern/) | Reliable event publishing | DB + messaging atomicity |
-| [Testcontainers Setup](testcontainers-setup/) | Real DB in tests | Don't mock what you can run |
-| [Async Patterns](async-patterns/) | CompletableFuture flows | Non-blocking pipelines |
-| [Exception Framework](exception-framework/) | Domain-specific errors | Clean error boundaries |
+A comprehensive library of battle-tested patterns with **200+ unit tests**, **Micrometer metrics**, **OpenTelemetry tracing**, **JMH benchmarks**, and **Kubernetes deployment ready**.
 
-## Philosophy
+---
 
-> "Make it work, make it right, make it fast — in that order."
+## 🏗️ Architecture Overview
 
-These patterns prioritize:
-- **Clarity** over cleverness
-- **Maintainability** over premature optimization
-- **Production-readiness** over demo-ware
-
-## Tech Stack
-
-- Java 21 (Virtual Threads where applicable)
-- Spring Boot 3.x
-- Testcontainers
-- PostgreSQL
-- Apache Kafka
-
-## How to Use
-
-Each pattern is self-contained. Copy the relevant package into your project and adapt.
-
-```bash
-# Run all tests
-./mvnw test
-
-# Run specific pattern tests
-./mvnw test -Dtest=CircuitBreakerTest
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           RESILIENCE LAYER                                  │
+├─────────────────────┬─────────────────────┬─────────────────────────────────┤
+│   Circuit Breaker   │  Resilient HTTP     │       Rate Limiter              │
+│   ══════════════    │  Client             │       ════════════              │
+│   ┌───┐   ┌───┐     │  ════════════       │   Token Bucket │ Sliding Window │
+│   │ C ├──►│ O │     │  • Retry + Backoff  │   ┌─────────┐  │ ┌───────────┐  │
+│   │ L │   │ P │     │  • Circuit Breaker  │   │●●●●●○○○○│  │ │▓▓▓▓░░░░░░ │  │
+│   │ O │◄──┤ E │     │  • Timeout          │   └─────────┘  │ └───────────┘  │
+│   │ S │   │ N │     │  • Metrics          │   Refill: 10/s │ Window: 1min   │
+│   │ E │──►├───┤     │                     │                │                │
+│   │ D │   │H-O│     │                     │   Fixed Window │                │
+│   └───┘   └───┘     │                     │   ┌───────────┐│                │
+│  Lock-free impl     │                     │   │ 95/100    ││                │
+│  AtomicReference    │                     │   └───────────┘│                │
+├─────────────────────┴─────────────────────┴─────────────────────────────────┤
+│                           MESSAGING LAYER                                   │
+├───────────────────────────────────┬─────────────────────────────────────────┤
+│         Outbox Pattern            │        Dead Letter Queue                │
+│         ══════════════            │        ═════════════════                │
+│   ┌──────────┐    ┌─────────┐     │   ┌─────────┐    ┌──────────┐           │
+│   │  Order   │    │  Kafka  │     │   │ orders  │    │orders.dlq│           │
+│   │ Service  │───►│ Producer│     │   │  topic  │───►│  topic   │           │
+│   └──────────┘    └─────────┘     │   └─────────┘    └──────────┘           │
+│        │               ▲          │        │              │                 │
+│        ▼               │          │   ┌────┴────┐    ┌────┴─────┐           │
+│   ┌──────────┐    ┌────┴────┐     │   │TRANSIENT│    │PERMANENT │           │
+│   │ outbox_  │    │ Outbox  │     │   │VALIDATION│   │INFRA     │           │
+│   │ events   │───►│Processor│     │   │MAX_RETRY │   │UNKNOWN   │           │
+│   └──────────┘    └─────────┘     │   └─────────┘    └──────────┘           │
+│   SKIP LOCKED                     │   Failure Categorization                │
+├───────────────────────────────────┴─────────────────────────────────────────┤
+│                         ASYNC PIPELINE                                      │
+│   ┌─────────┐     ┌─────────┐     ┌─────────┐                               │
+│   │ Fraud   │     │ Balance │     │Inventory│    Virtual Threads (Java 21)  │
+│   │ Check   │     │ Check   │     │ Check   │    Parallel execution         │
+│   └────┬────┘     └────┬────┘     └────┬────┘    Timeout per task           │
+│        └───────────────┼───────────────┘                                    │
+│                   ┌────▼────┐                                               │
+│                   │ Combine │                                               │
+│                   │ Results │                                               │
+│                   └─────────┘                                               │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                      OBSERVABILITY LAYER                                    │
+├───────────────────────────┬─────────────────────────────────────────────────┤
+│     Micrometer Metrics    │           OpenTelemetry Tracing                 │
+│     ══════════════════    │           ═════════════════════                 │
+│  circuit_breaker_*        │    TracedCircuitBreaker                         │
+│  rate_limiter_*           │    • Span per execution                         │
+│  outbox_*                 │    • State change events                        │
+│  dlq_*                    │    • Error recording                            │
+│  http_client_*            │    • Distributed context                        │
+└───────────────────────────┴─────────────────────────────────────────────────┘
 ```
 
-## Architecture Decisions
+---
 
-### Why not use Resilience4j directly?
+## 📦 Modules
 
-I do — in production. These skeletons show the **underlying mechanics** so you understand what the library does. When Resilience4j breaks (and it will, at 3 AM), you'll know how to debug it.
+| Module | Description | Key Features |
+|--------|-------------|--------------|
+| `circuit-breaker` | Lock-free Circuit Breaker | AtomicReference state, configurable thresholds |
+| `rate-limiter` | Multi-algorithm Rate Limiter | Token Bucket, Sliding Window, Fixed Window |
+| `outbox-pattern` | Transactional Outbox | SKIP LOCKED, batch processing, cleanup |
+| `dead-letter-queue` | DLQ Handler | Failure categorization, retry tracking |
+| `resilient-http-client` | HTTP Client with Resilience | Retry, backoff, circuit breaker integration |
+| `async-patterns` | Async Pipeline | Virtual threads, parallel execution |
+| `exception-framework` | Domain Exception Hierarchy | HTTP mapping, error codes |
+| `metrics` | Micrometer Instrumentation | Prometheus-ready metrics |
+| `tracing` | OpenTelemetry Integration | Distributed tracing |
+| `spring-boot-starter` | Auto-configuration | Zero-config Spring Boot integration |
 
-### Why Testcontainers over H2?
+---
 
-H2 lies. It tells you your query works, then PostgreSQL disagrees in production. Real databases catch real bugs.
+## 🚀 Quick Start
 
-### Why custom exceptions?
+### Maven Dependency
 
-Generic exceptions hide intent. `PaymentDeclinedException` tells you more than `RuntimeException("payment failed")`.
+```xml
+<!-- All patterns with Spring Boot auto-configuration -->
+<dependency>
+    <groupId>com.aporkolab</groupId>
+    <artifactId>senior-backend-patterns-spring-boot-starter</artifactId>
+    <version>1.0.0</version>
+</dependency>
 
-## License
+<!-- Or individual modules -->
+<dependency>
+    <groupId>com.aporkolab</groupId>
+    <artifactId>circuit-breaker</artifactId>
+    <version>1.0.0</version>
+</dependency>
+```
 
-MIT — use freely, attribute if you're feeling generous.
+### Spring Boot Configuration
 
-## Author
+```yaml
+patterns:
+  enabled: true
+  circuit-breaker:
+    failure-threshold: 5
+    success-threshold: 3
+    open-duration-ms: 30000
+  rate-limiter:
+    algorithm: TOKEN_BUCKET
+    capacity: 100
+    refill-rate: 10
+```
 
-[Ádám Porkoláb](https://aporkolab.com) — Senior Fullstack Engineer
+---
+
+## 💡 Pattern Examples
+
+### Circuit Breaker
+
+```java
+CircuitBreaker breaker = CircuitBreaker.builder()
+    .name("payment-service")
+    .failureThreshold(5)
+    .successThreshold(3)
+    .openDurationMs(30000)
+    .build();
+
+// With fallback
+String result = breaker.executeWithFallback(
+    () -> paymentService.process(order),
+    () -> "Payment service unavailable"
+);
+
+// With metrics
+CircuitBreakerMetrics metrics = CircuitBreakerMetrics.of(breaker, meterRegistry);
+metrics.execute(() -> paymentService.process(order));
+```
+
+### Rate Limiter
+
+```java
+// Token Bucket - allows bursts
+RateLimiter limiter = RateLimiter.tokenBucket()
+    .name("api-gateway")
+    .capacity(100)          // Max burst size
+    .refillRate(10)         // 10 tokens per second
+    .refillPeriod(Duration.ofSeconds(1))
+    .build();
+
+// Sliding Window - precise limiting
+RateLimiter precise = RateLimiter.slidingWindow()
+    .maxRequests(100)
+    .windowSize(Duration.ofMinutes(1))
+    .build();
+
+// Usage
+if (limiter.tryAcquire(userId)) {
+    processRequest();
+} else {
+    throw RateLimitExceededException.from(limiter, userId);
+}
+```
+
+### Outbox Pattern
+
+```java
+@Transactional
+public Order createOrder(CreateOrderRequest request) {
+    Order order = orderRepository.save(new Order(request));
+    
+    // Write to outbox in same transaction
+    outboxRepository.save(OutboxEvent.builder()
+        .aggregateType("Order")
+        .aggregateId(order.getId())
+        .eventType("OrderCreated")
+        .payload(objectMapper.writeValueAsString(order))
+        .build());
+    
+    return order;
+}
+```
+
+### Dead Letter Queue
+
+```java
+@KafkaListener(topics = "orders")
+public void handleOrder(ConsumerRecord<String, String> record) {
+    try {
+        processOrder(record.value());
+    } catch (ValidationException e) {
+        dlqHandler.sendToDlq(record, e, FailureType.VALIDATION_ERROR);
+    } catch (Exception e) {
+        dlqHandler.sendToDlq(record, e, FailureType.UNKNOWN);
+    }
+}
+```
+
+---
+
+## 📊 Metrics
+
+All patterns expose Prometheus-compatible metrics:
+
+```
+# Circuit Breaker
+circuit_breaker_calls_total{name="payment",result="success"} 1542
+circuit_breaker_calls_total{name="payment",result="failure"} 23
+circuit_breaker_calls_total{name="payment",result="rejected"} 156
+circuit_breaker_state{name="payment"} 0  # 0=CLOSED, 1=OPEN, 2=HALF_OPEN
+
+# Rate Limiter
+rate_limiter_permits_remaining{name="api",key="user-123"} 85
+rate_limiter_rejected_total{name="api"} 42
+
+# Outbox
+outbox_events_pending 12
+outbox_lag_seconds 0.5
+outbox_events_published_total 15234
+
+# DLQ
+dlq_messages_total{failure_type="VALIDATION_ERROR"} 23
+dlq_depth 5
+```
+
+---
+
+## 🧪 Testing
+
+```bash
+# Unit tests (200+)
+mvn test
+
+# Integration tests (Testcontainers)
+mvn verify -P integration-tests
+
+# Chaos engineering tests
+mvn verify -P chaos
+
+# JMH Benchmarks
+mvn package -DskipTests
+java -jar benchmarks/target/benchmarks.jar
+```
+
+---
+
+## ☸️ Kubernetes Deployment
+
+```bash
+# Using Helm
+helm install patterns ./deploy/helm/senior-patterns \
+  --set postgresql.enabled=true \
+  --set kafka.enabled=true
+
+# Using kubectl
+kubectl apply -f deploy/kubernetes/manifests.yaml
+```
+
+---
+
+## 📁 Project Structure
+
+```
+senior-backend-patterns/
+├── circuit-breaker/           # Lock-free Circuit Breaker
+├── rate-limiter/              # Multi-algorithm Rate Limiter
+├── outbox-pattern/            # Transactional Outbox
+├── dead-letter-queue/         # DLQ with failure categorization
+├── resilient-http-client/     # HTTP Client with resilience
+├── async-patterns/            # Virtual thread async pipeline
+├── exception-framework/       # Domain exception hierarchy
+├── metrics/                   # Micrometer instrumentation
+├── tracing/                   # OpenTelemetry integration
+├── spring-boot-starter/       # Auto-configuration
+├── demo-app/                  # 3-service demo application
+├── integration-tests/         # Testcontainers tests
+├── chaos-tests/               # Chaos engineering tests
+├── benchmarks/                # JMH performance tests
+├── deploy/
+│   ├── kubernetes/            # K8s manifests
+│   └── helm/                  # Helm chart
+└── docs/
+    └── adr/                   # Architecture Decision Records
+```
+
+---
+
+## 📚 Architecture Decision Records
+
+| ADR | Title |
+|-----|-------|
+| [ADR-001](docs/adr/0001-lock-free-circuit-breaker.md) | Lock-Free Circuit Breaker Implementation |
+| [ADR-002](docs/adr/0002-token-bucket-vs-sliding-window.md) | Rate Limiter Algorithm Selection |
+| [ADR-003](docs/adr/0003-outbox-skip-locked.md) | Outbox Pattern with SKIP LOCKED |
+| [ADR-004](docs/adr/0004-dlq-failure-categorization.md) | DLQ Failure Categorization |
+| [ADR-005](docs/adr/0005-virtual-threads-async.md) | Virtual Threads for Async Pipeline |
+
+---
+
+## 🔧 Requirements
+
+- **Java 21+** (Virtual Threads support)
+- **Spring Boot 3.2+**
+- **Docker** (for integration tests and demo)
+- **Kubernetes** (optional, for deployment)
+
+---
+
+## 📈 Performance
+
+JMH Benchmark results (M1 MacBook Pro):
+
+| Pattern | Throughput | p99 Latency |
+|---------|------------|-------------|
+| Circuit Breaker (success) | 12.3M ops/s | 89 ns |
+| Token Bucket Rate Limiter | 8.7M ops/s | 115 ns |
+| Fixed Window Rate Limiter | 11.2M ops/s | 92 ns |
+
+---
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Write tests for new functionality
+4. Submit a pull request
+
+---
+
+## 📄 License
+
+MIT License - see [LICENSE](LICENSE)
+
+---
+
+## 👤 Author
+
+**Ádám Porkoláb**
+- GitHub: [@aporkolab](https://github.com/aporkolab)
+- LinkedIn: [Ádám Porkoláb](https://linkedin.com/in/aporkolab)
+
+---
+
+*Built with ❤️ for the senior developer community*

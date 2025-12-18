@@ -1,0 +1,77 @@
+{{- define "senior-patterns.deployment" -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .name }}
+  labels:
+    {{- include "senior-patterns.labels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ .name }}
+spec:
+  {{- if not .autoscaling.enabled }}
+  replicas: {{ .replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "senior-patterns.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: {{ .name }}
+  template:
+    metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "{{ .service.targetPort }}"
+        prometheus.io/path: "/actuator/prometheus"
+      labels:
+        {{- include "senior-patterns.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: {{ .name }}
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ .name }}
+          image: "{{ .image.repository }}:{{ .image.tag }}"
+          imagePullPolicy: {{ .image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .service.targetPort }}
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "senior-patterns.fullname" . }}-config
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "kubernetes"
+          resources:
+            {{- toYaml .resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+{{- end -}}
+
+{{/* Order Service Deployment */}}
+{{- if .Values.orderService.enabled }}
+---
+{{ include "senior-patterns.deployment" (dict "name" "order-service" "Values" .Values "Chart" .Chart "Release" .Release "replicaCount" .Values.orderService.replicaCount "image" .Values.orderService.image "service" .Values.orderService.service "resources" .Values.orderService.resources "autoscaling" .Values.orderService.autoscaling) }}
+{{- end }}
+
+{{/* Payment Service Deployment */}}
+{{- if .Values.paymentService.enabled }}
+---
+{{ include "senior-patterns.deployment" (dict "name" "payment-service" "Values" .Values "Chart" .Chart "Release" .Release "replicaCount" .Values.paymentService.replicaCount "image" .Values.paymentService.image "service" .Values.paymentService.service "resources" .Values.paymentService.resources "autoscaling" (dict "enabled" false)) }}
+{{- end }}
+
+{{/* Notification Service Deployment */}}
+{{- if .Values.notificationService.enabled }}
+---
+{{ include "senior-patterns.deployment" (dict "name" "notification-service" "Values" .Values "Chart" .Chart "Release" .Release "replicaCount" .Values.notificationService.replicaCount "image" .Values.notificationService.image "service" .Values.notificationService.service "resources" .Values.notificationService.resources "autoscaling" (dict "enabled" false)) }}
+{{- end }}
