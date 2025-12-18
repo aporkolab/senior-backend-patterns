@@ -1,114 +1,232 @@
-# Demo Application
+# Demo Application: Order Processing Flow
 
-This demo shows all patterns working together in a realistic e-commerce scenario.
+End-to-end demonstration of all patterns working together in a realistic microservices scenario.
 
 ## Architecture
 
 ```
-┌─────────────────┐    HTTP     ┌─────────────────┐
-│                 │ ──────────▶ │                 │
-│  Order Service  │             │ Payment Service │
-│                 │ ◀────────── │                 │
-└────────┬────────┘   Circuit   └─────────────────┘
-         │            Breaker
-         │
-    Outbox Pattern
-         │
-         ▼
-┌─────────────────┐
-│                 │
-│      Kafka      │
-│                 │
-└────────┬────────┘
-         │
-         │  DLQ Handler
-         ▼
-┌─────────────────────┐
-│                     │
-│ Notification Service │
-│                     │
-└─────────────────────┘
+┌─────────────┐     ┌─────────────┐     ┌──────────────────┐
+│   Client    │────▶│   Order     │────▶│   PostgreSQL     │
+│  (curl/UI)  │     │   Service   │     │   (Orders +      │
+└─────────────┘     │   :8081     │     │    Outbox)       │
+                    └──────┬──────┘     └──────────────────┘
+                           │
+                           │ Kafka: order-events
+                           ▼
+                    ┌──────────────┐
+                    │   Payment    │───────▶ Kafka: payment-events
+                    │   Service    │
+                    │   :8082      │
+                    └──────┬───────┘
+                           │ Circuit Breaker
+                           │ (External Gateway)
+                           ▼
+                    ┌──────────────┐
+                    │ Notification │───────▶ Kafka: notification-events.dlq
+                    │   Service    │         (Dead Letter Queue)
+                    │   :8083      │
+                    └──────────────┘
 ```
 
 ## Patterns Demonstrated
 
-| Service | Patterns Used |
-|---------|--------------|
-| Order Service | Circuit Breaker, Outbox Pattern, Exception Framework |
-| Payment Service | Resilient HTTP Client, Async Pipeline |
-| Notification Service | Dead Letter Queue, Async Pipeline |
+| Service | Patterns |
+|---------|----------|
+| **Order Service** | Outbox Pattern, Rate Limiter, Swagger/OpenAPI |
+| **Payment Service** | Circuit Breaker, Event-Driven Processing |
+| **Notification Service** | DLQ Handling, Failure Classification |
+| **All Services** | Correlation ID, Structured Logging, Prometheus Metrics |
 
-## Running the Demo
+## Quick Start
 
-### Prerequisites
-- Docker & Docker Compose
-- Java 21+
-- Maven 3.9+
+### 1. Start Infrastructure
 
-### Start Infrastructure
 ```bash
-docker-compose up -d
+cd demo-app
+docker-compose up -d postgres kafka zookeeper kafka-ui prometheus grafana
 ```
 
-This starts:
-- PostgreSQL (port 5432)
-- Apache Kafka (port 9092)
-- Kafka UI (port 8080)
+### 2. Build Services
 
-### Run Services
+```bash
+# From project root
+mvn clean package -DskipTests -pl demo-app/order-service,demo-app/payment-service,demo-app/notification-service -am
+```
+
+### 3. Start Services
+
 ```bash
 # Terminal 1 - Order Service
-cd order-service && mvn spring-boot:run
+java -jar demo-app/order-service/target/order-service-1.0.0.jar
 
 # Terminal 2 - Payment Service  
-cd payment-service && mvn spring-boot:run
+java -jar demo-app/payment-service/target/payment-service-1.0.0.jar
 
 # Terminal 3 - Notification Service
-cd notification-service && mvn spring-boot:run
+java -jar demo-app/notification-service/target/notification-service-1.0.0.jar
 ```
 
-### Test the Flow
+## End-to-End Flow Test
 
-1. **Create an order** (triggers payment via Circuit Breaker):
+### Step 1: Create an Order
+
 ```bash
-curl -X POST http://localhost:8081/orders \
+curl -X POST http://localhost:8081/api/v1/orders \
   -H "Content-Type: application/json" \
-  -d '{"customerId": "cust-123", "amount": 99.99}'
+  -d '{
+    "customerId": "cust-001",
+    "productId": "prod-abc",
+    "quantity": 2,
+    "amount": 99.99
+  }'
 ```
 
-2. **Observe the flow**:
-   - Order Service creates order → writes to Outbox
-   - Outbox Processor publishes OrderCreated event to Kafka
-   - Order Service calls Payment Service (with Circuit Breaker)
-   - Notification Service consumes event
-   - If notification fails → DLQ handles it
+**Expected Response:**
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "customerId": "cust-001",
+  "productId": "prod-abc",
+  "quantity": 2,
+  "amount": 99.99,
+  "status": "PENDING",
+  "createdAt": "2024-01-15T10:30:00Z"
+}
+```
 
-3. **Simulate failures** to see resilience patterns:
+### Step 2: Observe Event Flow
+
+**Kafka UI:** http://localhost:8090
+
+Check topics:
+- `order-events` - OrderCreated event
+- `payment-events` - PaymentCompleted/PaymentFailed event
+- `notification-events.dlq` - Failed notifications
+
+### Step 3: Check Notifications
+
 ```bash
-# Kill Payment Service → Circuit Breaker opens
-# Restart → Circuit Breaker goes HALF_OPEN → CLOSED
-
-# Send malformed message → DLQ captures it
+curl http://localhost:8083/api/v1/notifications
 ```
 
-## Service Endpoints
+### Step 4: Trigger Circuit Breaker
 
-### Order Service (port 8081)
-- `POST /orders` - Create order
-- `GET /orders/{id}` - Get order
-- `GET /actuator/health` - Health check
+```bash
+# Set payment gateway failure rate to 100%
+curl -X POST http://localhost:8082/api/v1/payments/circuit-breaker/failure-rate \
+  -H "Content-Type: application/json" \
+  -d '{"rate": 1.0}'
 
-### Payment Service (port 8082)
-- `POST /payments/process` - Process payment
-- `GET /actuator/health` - Health check
+# Create several orders to trigger circuit breaker
+for i in {1..5}; do
+  curl -X POST http://localhost:8081/api/v1/orders \
+    -H "Content-Type: application/json" \
+    -d "{\"customerId\": \"test-$i\", \"productId\": \"prod-$i\", \"quantity\": 1, \"amount\": 10.00}"
+done
 
-### Notification Service (port 8083)
-- `GET /notifications/dlq/count` - DLQ message count
-- `POST /notifications/dlq/retry` - Retry DLQ messages
-- `GET /actuator/health` - Health check
+# Check circuit state
+curl http://localhost:8082/api/v1/payments/circuit-breaker/state
+```
 
-## Monitoring
+**Expected:** Circuit breaker should open after 3 failures.
 
-- **Circuit Breaker State**: Check Order Service logs
-- **Outbox Queue**: Query `outbox_events` table
-- **DLQ Messages**: Check `*.dlq` Kafka topics via Kafka UI
+### Step 5: Reset and Recover
+
+```bash
+# Reset failure rate
+curl -X POST http://localhost:8082/api/v1/payments/circuit-breaker/failure-rate \
+  -H "Content-Type: application/json" \
+  -d '{"rate": 0.0}'
+
+# Wait for circuit to close (~10 seconds)
+# Then create new orders - they should succeed
+```
+
+## API Documentation (Swagger)
+
+| Service | Swagger UI |
+|---------|------------|
+| Order Service | http://localhost:8081/swagger-ui.html |
+| Payment Service | http://localhost:8082/swagger-ui.html |
+| Notification Service | http://localhost:8083/swagger-ui.html |
+
+## Observability
+
+### Prometheus Metrics
+
+http://localhost:9090
+
+**Key Metrics:**
+- `circuit_breaker_state` - Current state (0=CLOSED, 1=OPEN, 2=HALF_OPEN)
+- `circuit_breaker_calls_total` - Call counts by result
+- `rate_limiter_rejected_total` - Rate limited requests
+- `outbox_events_pending` - Pending outbox events
+- `dlq_depth` - Messages in DLQ
+
+### Grafana Dashboard
+
+http://localhost:3000 (admin/admin)
+
+Pre-configured dashboard: **Senior Backend Patterns**
+
+## Service Health
+
+```bash
+# All health endpoints
+curl http://localhost:8081/actuator/health
+curl http://localhost:8082/actuator/health  
+curl http://localhost:8083/actuator/health
+```
+
+## Rate Limiting Demo
+
+```bash
+# Rapid-fire requests to trigger rate limiting
+for i in {1..20}; do
+  curl -s -o /dev/null -w "%{http_code}\n" \
+    -X POST http://localhost:8081/api/v1/orders?clientId=test-client \
+    -H "Content-Type: application/json" \
+    -d '{"customerId": "rate-test", "productId": "p1", "quantity": 1, "amount": 1.00}'
+done
+```
+
+**Expected:** After ~10 requests, you should see `429 Too Many Requests`.
+
+## DLQ Demo
+
+```bash
+# Set notification failure rate high
+curl -X POST http://localhost:8083/api/v1/notifications/failure-rate \
+  -H "Content-Type: application/json" \
+  -d '{"rate": 0.8}'
+
+# Create orders - some notifications will fail
+for i in {1..10}; do
+  curl -X POST http://localhost:8081/api/v1/orders \
+    -H "Content-Type: application/json" \
+    -d "{\"customerId\": \"dlq-test-$i\", \"productId\": \"p1\", \"quantity\": 1, \"amount\": 5.00}"
+done
+
+# Check DLQ
+curl http://localhost:8083/api/v1/notifications/dlq
+```
+
+## Cleanup
+
+```bash
+docker-compose down -v
+```
+
+## Troubleshooting
+
+### Services won't start
+- Check PostgreSQL is running: `docker-compose ps`
+- Check Kafka is healthy: `docker-compose logs kafka`
+
+### Events not flowing
+- Check Kafka topics in Kafka UI
+- Check service logs for errors
+
+### Circuit breaker stuck open
+- Wait for open duration (10s) to expire
+- Check payment service logs

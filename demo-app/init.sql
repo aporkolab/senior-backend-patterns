@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS outbox_events (
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     published_at TIMESTAMP,
     status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+    retry_count INTEGER NOT NULL DEFAULT 0,
     
     -- Indexes for efficient polling
     CONSTRAINT outbox_events_status_check CHECK (status IN ('PENDING', 'PUBLISHED', 'FAILED'))
@@ -22,9 +23,12 @@ CREATE INDEX IF NOT EXISTS idx_outbox_status_created ON outbox_events(status, cr
 CREATE TABLE IF NOT EXISTS orders (
     id UUID PRIMARY KEY,
     customer_id VARCHAR(100) NOT NULL,
+    product_id VARCHAR(100) NOT NULL,
+    quantity INTEGER NOT NULL DEFAULT 1,
     amount DECIMAL(10,2) NOT NULL,
     status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
     payment_id VARCHAR(100),
+    failure_reason TEXT,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );

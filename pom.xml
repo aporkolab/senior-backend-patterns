@@ -27,6 +27,8 @@
         <module>rate-limiter</module>
         <module>metrics</module>
         <module>tracing</module>
+        <module>bulkhead</module>
+        <module>logging</module>
         
         <!-- Spring Boot Integration -->
         <module>spring-boot-starter</module>

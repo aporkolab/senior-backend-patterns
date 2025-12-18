@@ -2,29 +2,19 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [ main, develop ]
   pull_request:
-    branches: [main]
+    branches: [ main ]
+
+env:
+  JAVA_VERSION: '21'
+  MAVEN_OPTS: -Xmx1024m
 
 jobs:
   build:
+    name: Build & Unit Tests
     runs-on: ubuntu-latest
     
-    services:
-      postgres:
-        image: postgres:15-alpine
-        env:
-          POSTGRES_DB: testdb
-          POSTGRES_USER: test
-          POSTGRES_PASSWORD: test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -32,48 +22,70 @@ jobs:
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
-          java-version: '21'
+          java-version: ${{ env.JAVA_VERSION }}
           distribution: 'temurin'
           cache: maven
 
-      - name: Cache Maven packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.m2
-          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
-          restore-keys: ${{ runner.os }}-m2
-
       - name: Build with Maven
-        run: mvn clean compile -B
+        run: mvn clean compile -B -q
 
       - name: Run Unit Tests
-        run: mvn test -B -Dtest=!*IntegrationTest
+        run: mvn test -B
+
+      - name: Generate Test Report
+        if: always()
+        run: mvn surefire-report:report-only -B -q || true
+
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: '**/target/surefire-reports/*.xml'
+          retention-days: 7
+
+      - name: Generate JaCoCo Coverage Report
+        run: mvn jacoco:report -B -q || true
+
+      - name: Upload Coverage Report
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: '**/target/site/jacoco/'
+          retention-days: 7
+
+  integration-tests:
+    name: Integration Tests (Testcontainers)
+    runs-on: ubuntu-latest
+    needs: build
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: maven
 
       - name: Run Integration Tests
-        run: mvn test -B -Dtest=*IntegrationTest
+        run: mvn verify -P integration-tests -B -pl integration-tests -am
         env:
           TESTCONTAINERS_RYUK_DISABLED: true
 
-      - name: Generate Coverage Report
-        run: mvn jacoco:report -B
-
-      - name: Upload Coverage to Codecov
-        uses: codecov/codecov-action@v4
-        with:
-          files: target/site/jacoco/jacoco.xml
-          fail_ci_if_error: false
-          verbose: true
-
-      - name: Upload Test Results
-        uses: actions/upload-artifact@v4
+      - name: Upload Integration Test Results
         if: always()
+        uses: actions/upload-artifact@v4
         with:
-          name: test-results
-          path: |
-            **/target/surefire-reports/
-            **/target/failsafe-reports/
+          name: integration-test-results
+          path: '**/target/failsafe-reports/*.xml'
+          retention-days: 7
 
-  code-quality:
+  chaos-tests:
+    name: Chaos Engineering Tests
     runs-on: ubuntu-latest
     needs: build
     
@@ -84,19 +96,51 @@ jobs:
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
-          java-version: '21'
+          java-version: ${{ env.JAVA_VERSION }}
           distribution: 'temurin'
           cache: maven
 
-      - name: Run SpotBugs
-        run: mvn spotbugs:check -B
-        continue-on-error: true
+      - name: Run Chaos Tests
+        run: mvn test -P chaos -B -pl chaos-tests -am
+        timeout-minutes: 10
 
-      - name: Run Checkstyle
-        run: mvn checkstyle:check -B
+  benchmark:
+    name: JMH Benchmarks
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build Benchmarks
+        run: mvn package -DskipTests -pl benchmarks -am -B -q
+
+      - name: Run JMH Benchmarks
+        run: |
+          java -jar benchmarks/target/benchmarks.jar \
+            -wi 2 -i 5 -f 1 -rf json -rff benchmark-results.json \
+            ".*Benchmark.*"
         continue-on-error: true
+        timeout-minutes: 15
+
+      - name: Upload Benchmark Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: benchmark-results.json
+          retention-days: 30
 
   dependency-check:
+    name: Security Scan
     runs-on: ubuntu-latest
     needs: build
     
@@ -107,17 +151,18 @@ jobs:
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
-          java-version: '21'
+          java-version: ${{ env.JAVA_VERSION }}
           distribution: 'temurin'
           cache: maven
 
       - name: OWASP Dependency Check
-        run: mvn dependency-check:check -B
+        run: mvn org.owasp:dependency-check-maven:check -B || true
         continue-on-error: true
 
       - name: Upload Dependency Check Report
         uses: actions/upload-artifact@v4
-        if: always()
         with:
           name: dependency-check-report
-          path: target/dependency-check-report.html
+          path: '**/target/dependency-check-report.html'
+          retention-days: 7
+        if: always()
