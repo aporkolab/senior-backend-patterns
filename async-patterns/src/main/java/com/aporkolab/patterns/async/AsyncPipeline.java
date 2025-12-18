@@ -15,15 +15,7 @@ import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/**
- * Utility class for common async patterns with CompletableFuture.
- * 
- * Design decisions:
- * - Uses virtual threads by default (Java 21+)
- * - Provides timeout handling (critical for production)
- * - Supports parallel execution with controlled concurrency
- * - Includes structured error handling patterns
- */
+
 public class AsyncPipeline {
 
     private static final Logger log = LoggerFactory.getLogger(AsyncPipeline.class);
@@ -31,32 +23,24 @@ public class AsyncPipeline {
     private final ExecutorService executor;
     private final ScheduledExecutorService scheduler;
 
-    /**
-     * Create pipeline with virtual thread executor (Java 21+).
-     */
+    
     public AsyncPipeline() {
         this.executor = Executors.newVirtualThreadPerTaskExecutor();
         this.scheduler = Executors.newSingleThreadScheduledExecutor();
     }
 
-    /**
-     * Create pipeline with custom executor.
-     */
+    
     public AsyncPipeline(ExecutorService executor) {
         this.executor = executor;
         this.scheduler = Executors.newSingleThreadScheduledExecutor();
     }
 
-    /**
-     * Run a supplier asynchronously.
-     */
+    
     public <T> CompletableFuture<T> async(Supplier<T> supplier) {
         return CompletableFuture.supplyAsync(supplier, executor);
     }
 
-    /**
-     * Run multiple suppliers in parallel, return when all complete.
-     */
+    
     @SafeVarargs
     public final <T> CompletableFuture<List<T>> parallel(Supplier<T>... suppliers) {
         List<CompletableFuture<T>> futures = java.util.Arrays.stream(suppliers)
@@ -66,9 +50,7 @@ public class AsyncPipeline {
         return allOf(futures);
     }
 
-    /**
-     * Combine multiple futures into a list of results.
-     */
+    
     public <T> CompletableFuture<List<T>> allOf(List<CompletableFuture<T>> futures) {
         return CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
                 .thenApply(v -> futures.stream()
@@ -76,24 +58,34 @@ public class AsyncPipeline {
                         .collect(Collectors.toList()));
     }
 
-    /**
-     * Return the first successful result (racing pattern).
-     */
+    
     public <T> CompletableFuture<T> race(List<CompletableFuture<T>> futures) {
+        if (futures.isEmpty()) {
+            return CompletableFuture.failedFuture(
+                    new IllegalArgumentException("Cannot race with empty list of futures"));
+        }
+
         CompletableFuture<T> result = new CompletableFuture<>();
+        java.util.concurrent.atomic.AtomicInteger failureCount = new java.util.concurrent.atomic.AtomicInteger(0);
+        java.util.concurrent.atomic.AtomicReference<Throwable> lastFailure = new java.util.concurrent.atomic.AtomicReference<>();
 
         futures.forEach(future -> future
                 .thenAccept(result::complete)
-                .exceptionally(ex -> null) // Ignore failures
+                .exceptionally(ex -> {
+                    lastFailure.set(ex);
+                    if (failureCount.incrementAndGet() == futures.size()) {
+                        
+                        result.completeExceptionally(new RuntimeException(
+                                "All " + futures.size() + " futures in race failed", lastFailure.get()));
+                    }
+                    return null;
+                })
         );
 
         return result;
     }
 
-    /**
-     * Add timeout to a future.
-     * Critical for production - async without timeout = memory leak.
-     */
+    
     public <T> CompletableFuture<T> withTimeout(CompletableFuture<T> future, Duration timeout) {
         CompletableFuture<T> timeoutFuture = new CompletableFuture<>();
 
@@ -107,9 +99,7 @@ public class AsyncPipeline {
         return future.applyToEither(timeoutFuture, Function.identity());
     }
 
-    /**
-     * Retry an async operation with exponential backoff.
-     */
+    
     public <T> CompletableFuture<T> withRetry(
             Supplier<CompletableFuture<T>> operation,
             int maxRetries,
@@ -131,7 +121,7 @@ public class AsyncPipeline {
                         return CompletableFuture.failedFuture(ex);
                     }
 
-                    long delayMs = delay.toMillis() * (1L << attempt); // Exponential
+                    long delayMs = delay.toMillis() * (1L << attempt); 
                     log.info("Retry {}/{} after {}ms: {}", attempt + 1, maxRetries, delayMs, ex.getMessage());
 
                     return delay(Duration.ofMillis(delayMs))
@@ -139,18 +129,14 @@ public class AsyncPipeline {
                 });
     }
 
-    /**
-     * Create a delayed future.
-     */
+    
     public CompletableFuture<Void> delay(Duration duration) {
         CompletableFuture<Void> future = new CompletableFuture<>();
         scheduler.schedule(() -> future.complete(null), duration.toMillis(), TimeUnit.MILLISECONDS);
         return future;
     }
 
-    /**
-     * Fan-out pattern: apply operation to all items in parallel.
-     */
+    
     public <T, R> CompletableFuture<List<R>> fanOut(
             List<T> items,
             Function<T, CompletableFuture<R>> operation) {
@@ -162,35 +148,41 @@ public class AsyncPipeline {
         return allOf(futures);
     }
 
-    /**
-     * Fan-out with controlled concurrency (limit parallel operations).
-     */
+    
     public <T, R> CompletableFuture<List<R>> fanOutLimited(
             List<T> items,
             Function<T, CompletableFuture<R>> operation,
             int maxConcurrency) {
 
-        // Using semaphore pattern for concurrency control
+        
         java.util.concurrent.Semaphore semaphore = new java.util.concurrent.Semaphore(maxConcurrency);
 
         List<CompletableFuture<R>> futures = items.stream()
-                .map(item -> CompletableFuture.runAsync(() -> {
-                            try {
-                                semaphore.acquire();
-                            } catch (InterruptedException e) {
-                                Thread.currentThread().interrupt();
-                            }
-                        }, executor)
-                        .thenCompose(v -> operation.apply(item))
-                        .whenComplete((r, ex) -> semaphore.release()))
+                .map(item -> {
+                    
+                    java.util.concurrent.atomic.AtomicBoolean acquired = new java.util.concurrent.atomic.AtomicBoolean(false);
+                    return CompletableFuture.runAsync(() -> {
+                                try {
+                                    semaphore.acquire();
+                                    acquired.set(true);
+                                } catch (InterruptedException e) {
+                                    Thread.currentThread().interrupt();
+                                    throw new RuntimeException("Interrupted while acquiring semaphore", e);
+                                }
+                            }, executor)
+                            .thenCompose(v -> operation.apply(item))
+                            .whenComplete((r, ex) -> {
+                                if (acquired.get()) {
+                                    semaphore.release();
+                                }
+                            });
+                })
                 .toList();
 
         return allOf(futures);
     }
 
-    /**
-     * Shutdown the executor gracefully.
-     */
+    
     public void shutdown() {
         executor.shutdown();
         scheduler.shutdown();

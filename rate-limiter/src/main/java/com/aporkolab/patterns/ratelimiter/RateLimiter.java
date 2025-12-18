@@ -9,72 +9,25 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
-/**
- * Production-grade Rate Limiter with multiple algorithm support.
- * 
- * Supports:
- * - Token Bucket (smooth rate limiting with burst support)
- * - Sliding Window (precise rate limiting)
- * - Fixed Window (simple, memory efficient)
- * 
- * Features:
- * - Thread-safe (lock-free where possible)
- * - Per-key rate limiting
- * - Configurable rejection handling
- * - Metrics-ready
- * 
- * Usage:
- * <pre>{@code
- * RateLimiter limiter = RateLimiter.tokenBucket()
- *     .capacity(100)
- *     .refillRate(10)
- *     .refillPeriod(Duration.ofSeconds(1))
- *     .build();
- * 
- * if (limiter.tryAcquire("user-123")) {
- *     // Process request
- * } else {
- *     // Reject or queue
- * }
- * }</pre>
- */
+
 public interface RateLimiter {
 
-    /**
-     * Try to acquire a permit for the given key.
-     * 
-     * @param key the rate limit key (e.g., user ID, IP address)
-     * @return true if permit was acquired, false if rate limited
-     */
+    
     boolean tryAcquire(String key);
 
-    /**
-     * Try to acquire multiple permits.
-     */
+    
     boolean tryAcquire(String key, int permits);
 
-    /**
-     * Acquire a permit, blocking if necessary.
-     * 
-     * @param key the rate limit key
-     * @param timeout maximum time to wait
-     * @return true if permit was acquired within timeout
-     */
+    
     boolean acquire(String key, Duration timeout) throws InterruptedException;
 
-    /**
-     * Get remaining permits for a key.
-     */
+    
     long getRemainingPermits(String key);
 
-    /**
-     * Get time until next permit is available.
-     */
+    
     Optional<Duration> getTimeUntilNextPermit(String key);
 
-    /**
-     * Execute with rate limiting.
-     */
+    
     default <T> Optional<T> executeIfAllowed(String key, Supplier<T> action) {
         if (tryAcquire(key)) {
             return Optional.ofNullable(action.get());
@@ -82,27 +35,19 @@ public interface RateLimiter {
         return Optional.empty();
     }
 
-    /**
-     * Get the rate limiter name.
-     */
+    
     String getName();
 
-    /**
-     * Get the algorithm type.
-     */
+    
     Algorithm getAlgorithm();
 
-    /**
-     * Reset rate limit state for a key.
-     */
+    
     void reset(String key);
 
-    /**
-     * Reset all rate limit state.
-     */
+    
     void resetAll();
 
-    // Builder methods
+    
     static TokenBucketBuilder tokenBucket() {
         return new TokenBucketBuilder();
     }
@@ -121,15 +66,9 @@ public interface RateLimiter {
         FIXED_WINDOW
     }
 
-    // ==================== TOKEN BUCKET IMPLEMENTATION ====================
+    
 
-    /**
-     * Token Bucket algorithm implementation.
-     * 
-     * - Allows bursts up to bucket capacity
-     * - Tokens refill at a constant rate
-     * - Smooth rate limiting over time
-     */
+    
     class TokenBucket implements RateLimiter {
 
         private final String name;
@@ -183,7 +122,7 @@ public interface RateLimiter {
             if (bucket.getAvailableTokens(refillTokens, refillPeriod) > 0) {
                 return Optional.empty();
             }
-            // Calculate time for next refill
+            
             long timeSinceLastRefill = System.nanoTime() - bucket.lastRefillTime.get();
             long refillPeriodNanos = refillPeriod.toNanos();
             long waitTime = refillPeriodNanos - (timeSinceLastRefill % refillPeriodNanos);
@@ -251,24 +190,22 @@ public interface RateLimiter {
                     long tokensToAdd = periods * refillTokens;
 
                     if (lastRefillTime.compareAndSet(lastRefill, lastRefill + (periods * periodNanos))) {
-                        long current = tokens.get();
-                        long newTokens = Math.min(maxTokens, current + tokensToAdd);
-                        tokens.set(newTokens);
+                        
+                        long current;
+                        long newTokens;
+                        do {
+                            current = tokens.get();
+                            newTokens = Math.min(maxTokens, current + tokensToAdd);
+                        } while (!tokens.compareAndSet(current, newTokens));
                     }
                 }
             }
         }
     }
 
-    // ==================== SLIDING WINDOW IMPLEMENTATION ====================
+    
 
-    /**
-     * Sliding Window algorithm implementation.
-     * 
-     * - Precise rate limiting
-     * - No burst allowance
-     * - Higher memory usage for tracking
-     */
+    
     class SlidingWindow implements RateLimiter {
 
         private final String name;
@@ -363,13 +300,20 @@ public interface RateLimiter {
             }
 
             Optional<Duration> getTimeUntilNextPermit(Duration windowSize) {
-                long oldestSlot = slots.keySet().stream().min(Long::compare).orElse(0L);
-                if (oldestSlot == 0) return Optional.empty();
-                
+                if (slots.isEmpty()) {
+                    return Optional.empty();
+                }
+
+                Optional<Long> oldestSlotOpt = slots.keySet().stream().min(Long::compare);
+                if (oldestSlotOpt.isEmpty()) {
+                    return Optional.empty();
+                }
+
+                long oldestSlot = oldestSlotOpt.get();
                 long slotDuration = windowSize.toMillis() / SLOT_COUNT;
                 long now = System.currentTimeMillis();
                 long expiryTime = oldestSlot * slotDuration + windowSize.toMillis();
-                
+
                 if (expiryTime > now) {
                     return Optional.of(Duration.ofMillis(expiryTime - now));
                 }
@@ -393,15 +337,9 @@ public interface RateLimiter {
         }
     }
 
-    // ==================== FIXED WINDOW IMPLEMENTATION ====================
+    
 
-    /**
-     * Fixed Window algorithm implementation.
-     * 
-     * - Simple and memory efficient
-     * - May allow bursts at window boundaries
-     * - Good for most use cases
-     */
+    
     class FixedWindow implements RateLimiter {
 
         private final String name;
@@ -520,7 +458,7 @@ public interface RateLimiter {
         }
     }
 
-    // ==================== BUILDERS ====================
+    
 
     class TokenBucketBuilder {
         private String name = "default";

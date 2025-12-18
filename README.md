@@ -84,7 +84,7 @@ A comprehensive library of battle-tested patterns with **200+ unit tests**, **Mi
 | `resilient-http-client` | HTTP Client with Resilience | Retry, backoff, circuit breaker integration |
 | `async-patterns` | Async Pipeline | Virtual threads, parallel execution |
 | `exception-framework` | Domain Exception Hierarchy | HTTP mapping, error codes |
-| `structured-logging` | Correlation ID & MDC | HTTP/Kafka propagation, context management |
+| `logging` | Correlation ID & MDC | HTTP/Kafka propagation, context management |
 | `metrics` | Micrometer Instrumentation | Prometheus-ready metrics |
 | `tracing` | OpenTelemetry Integration | Distributed tracing |
 | `spring-boot-starter` | Auto-configuration | Zero-config Spring Boot integration |
@@ -382,6 +382,36 @@ cd benchmarks
 mvn clean package
 java -jar target/benchmarks.jar -wi 2 -i 5 -f 1
 ```
+
+---
+
+## 🔄 Changelog
+
+### v1.0.0 (2024-12)
+
+**Bug Fixes:**
+- **circuit-breaker**: Fixed volatile visibility for state change listeners
+- **bulkhead**: Fixed `queueCapacity=0` configuration using `SynchronousQueue`
+- **bulkhead**: Fixed Future not cancelled on timeout in ThreadPoolBulkhead
+- **resilient-http-client**: Fixed async retry infinite loop
+- **resilient-http-client**: Fixed retry on 5xx responses including original exception
+- **resilient-http-client**: Fixed trailing slash stripping in URL handling
+- **async-patterns**: Fixed `AsyncPipeline.race()` silent exception swallowing
+- **async-patterns**: Fixed `fanOutLimited()` semaphore permit leak on interrupt
+- **outbox-pattern**: Fixed `OutboxProcessor` InterruptedException handling
+- **outbox-pattern**: Added null checks for repository results
+- **outbox-pattern**: Added input validation to `OutboxPublisher`
+- **metrics**: Fixed `CircuitBreakerMetrics` counter registration memory leak
+- **metrics**: Added missing getter methods to `DlqMetrics`
+- **metrics**: Fixed `HttpClientMetrics` regex performance with pre-compiled patterns
+- **dead-letter-queue**: Fixed `attemptTracker` memory leak with TTL-based cleanup
+- **dead-letter-queue**: Added graceful shutdown with `@PreDestroy`
+- **rate-limiter**: Fixed `TokenBucket.refill()` race condition with CAS loop
+- **rate-limiter**: Fixed `SlidingWindow.getTimeUntilNextPermit()` NPE on empty slots
+
+**Improvements:**
+- Added comprehensive test coverage for metrics, tracing, and logging modules
+- All modules now have 80%+ test coverage
 
 ---
 

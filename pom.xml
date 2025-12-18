@@ -15,7 +15,7 @@
 
 
     <modules>
-        <!-- Core Pattern Modules -->
+        
         <module>circuit-breaker</module>
         <module>outbox-pattern</module>
         <module>dead-letter-queue</module>
@@ -23,20 +23,20 @@
         <module>async-patterns</module>
         <module>exception-framework</module>
         
-        <!-- New Modules (10/10 Upgrade) -->
+        
         <module>rate-limiter</module>
         <module>metrics</module>
         <module>tracing</module>
         <module>bulkhead</module>
         <module>logging</module>
         
-        <!-- Spring Boot Integration -->
+        
         <module>spring-boot-starter</module>
         
-        <!-- Demo Application -->
+        
         <module>demo-app</module>
         
-        <!-- Testing and Quality -->
+        
         <module>integration-tests</module>
         <module>chaos-tests</module>
         <module>benchmarks</module>
@@ -47,21 +47,22 @@
         <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         
-        <!-- Spring Boot -->
+        
         <spring-boot.version>3.2.0</spring-boot.version>
         
-        <!-- Testing -->
+        
         <junit.version>5.10.1</junit.version>
-        <mockito.version>5.8.0</mockito.version>
+        <mockito.version>5.14.2</mockito.version>
+        <byte-buddy.version>1.15.10</byte-buddy.version>
         <assertj.version>3.24.2</assertj.version>
         <testcontainers.version>1.19.3</testcontainers.version>
         <mockwebserver.version>4.12.0</mockwebserver.version>
         
-        <!-- Utilities -->
+        
         <jackson.version>2.16.0</jackson.version>
         <slf4j.version>2.0.9</slf4j.version>
         
-        <!-- Plugins -->
+        
         <jacoco.version>0.8.11</jacoco.version>
     </properties>
 
@@ -78,7 +79,7 @@
     </dependencyManagement>
 
     <dependencies>
-        <!-- Logging -->
+        
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
@@ -87,11 +88,11 @@
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
-            <version>1.4.14</version>
+            <version>1.4.11</version>
             <scope>runtime</scope>
         </dependency>
 
-        <!-- Spring (optional - only if using Spring-specific patterns) -->
+        
         <dependency>
             <groupId>org.springframework</groupId>
             <artifactId>spring-context</artifactId>
@@ -123,7 +124,7 @@
             <optional>true</optional>
         </dependency>
 
-        <!-- JPA -->
+        
         <dependency>
             <groupId>jakarta.persistence</groupId>
             <artifactId>jakarta.persistence-api</artifactId>
@@ -131,7 +132,7 @@
             <optional>true</optional>
         </dependency>
 
-        <!-- JSON -->
+        
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
@@ -145,7 +146,7 @@
             <optional>true</optional>
         </dependency>
 
-        <!-- Kafka Client -->
+        
         <dependency>
             <groupId>org.apache.kafka</groupId>
             <artifactId>kafka-clients</artifactId>
@@ -153,7 +154,7 @@
             <optional>true</optional>
         </dependency>
 
-        <!-- Testing -->
+        
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
@@ -178,8 +179,20 @@
             <version>${mockito.version}</version>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>net.bytebuddy</groupId>
+            <artifactId>byte-buddy</artifactId>
+            <version>${byte-buddy.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>net.bytebuddy</groupId>
+            <artifactId>byte-buddy-agent</artifactId>
+            <version>${byte-buddy.version}</version>
+            <scope>test</scope>
+        </dependency>
+
         
-        <!-- MockWebServer for HTTP client tests -->
         <dependency>
             <groupId>com.squareup.okhttp3</groupId>
             <artifactId>mockwebserver</artifactId>
@@ -187,7 +200,7 @@
             <scope>test</scope>
         </dependency>
 
-        <!-- Testcontainers -->
+        
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>testcontainers</artifactId>
@@ -213,7 +226,7 @@
             <scope>test</scope>
         </dependency>
 
-        <!-- Spring Test -->
+        
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
@@ -226,7 +239,7 @@
             </exclusions>
         </dependency>
 
-        <!-- PostgreSQL Driver (for tests) -->
+        
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
@@ -255,10 +268,15 @@
                     <includes>
                         <include>**/*Test.java</include>
                     </includes>
+                    <argLine>
+                        -XX:+EnableDynamicAgentLoading
+                        --add-opens java.base/java.lang=ALL-UNNAMED
+                        --add-opens java.base/java.lang.reflect=ALL-UNNAMED
+                    </argLine>
                 </configuration>
             </plugin>
 
-            <!-- JaCoCo for code coverage -->
+            
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
@@ -280,7 +298,7 @@
                 </executions>
             </plugin>
 
-            <!-- Source JAR -->
+            
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-source-plugin</artifactId>
@@ -298,7 +316,7 @@
     </build>
 
     <profiles>
-        <!-- Integration Tests Profile -->
+        
         <profile>
             <id>integration-tests</id>
             <build>

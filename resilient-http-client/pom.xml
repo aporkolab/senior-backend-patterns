@@ -10,13 +10,9 @@
         <version>1.0.0</version>
     </parent>
 
-    <artifactId>tracing</artifactId>
-    <name>OpenTelemetry Tracing</name>
-    <description>OpenTelemetry distributed tracing for all patterns</description>
-
-    <properties>
-        <opentelemetry.version>1.34.1</opentelemetry.version>
-    </properties>
+    <artifactId>resilient-http-client</artifactId>
+    <name>Resilient HTTP Client</name>
+    <description>HTTP client with built-in resilience patterns including retry, timeout, and circuit breaker</description>
 
     <dependencies>
         
@@ -28,19 +24,6 @@
 
         
         <dependency>
-            <groupId>io.opentelemetry</groupId>
-            <artifactId>opentelemetry-api</artifactId>
-            <version>${opentelemetry.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>io.opentelemetry</groupId>
-            <artifactId>opentelemetry-sdk</artifactId>
-            <version>${opentelemetry.version}</version>
-            <optional>true</optional>
-        </dependency>
-
-        
-        <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
             <scope>test</scope>
@@ -48,12 +31,6 @@
         <dependency>
             <groupId>org.assertj</groupId>
             <artifactId>assertj-core</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>io.opentelemetry</groupId>
-            <artifactId>opentelemetry-sdk-testing</artifactId>
-            <version>${opentelemetry.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>

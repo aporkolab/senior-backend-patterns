@@ -6,20 +6,12 @@ import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.core.KafkaOperations;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * Polls the outbox table and publishes pending events to Kafka.
- * 
- * Design decisions:
- * - Uses database locking (SKIP LOCKED) for multi-instance safety
- * - Processes in batches to balance throughput and latency
- * - Marks events as published only after Kafka acknowledgment
- * - Includes cleanup of old published events
- */
+
 @Component
 public class OutboxProcessor {
 
@@ -28,23 +20,20 @@ public class OutboxProcessor {
     private static final int RETENTION_DAYS = 7;
 
     private final OutboxRepository outboxRepository;
-    private final KafkaTemplate<String, String> kafkaTemplate;
+    private final KafkaOperations<String, String> kafkaOperations;
 
-    public OutboxProcessor(OutboxRepository outboxRepository, KafkaTemplate<String, String> kafkaTemplate) {
+    public OutboxProcessor(OutboxRepository outboxRepository, KafkaOperations<String, String> kafkaOperations) {
         this.outboxRepository = outboxRepository;
-        this.kafkaTemplate = kafkaTemplate;
+        this.kafkaOperations = kafkaOperations;
     }
 
-    /**
-     * Poll and publish pending events every 500ms.
-     * Adjust frequency based on latency requirements.
-     */
+    
     @Scheduled(fixedDelay = 500)
     @Transactional
     public void processOutbox() {
         List<OutboxEvent> pendingEvents = outboxRepository.findPendingEventsForUpdate(BATCH_SIZE);
 
-        if (pendingEvents.isEmpty()) {
+        if (pendingEvents == null || pendingEvents.isEmpty()) {
             return;
         }
 
@@ -59,8 +48,14 @@ public class OutboxProcessor {
                 log.debug("Published outbox event: id={}, type={}, topic={}",
                         event.getId(), event.getEventType(), event.getTopicName());
 
-            } catch (Exception e) {
+            } catch (OutboxException e) {
+                
                 log.error("Failed to publish outbox event {}: {}", event.getId(), e.getMessage());
+                event.markFailed();
+                outboxRepository.save(event);
+            } catch (RuntimeException e) {
+                
+                log.error("Unexpected error publishing outbox event {}", event.getId(), e);
                 event.markFailed();
                 outboxRepository.save(event);
             }
@@ -72,18 +67,19 @@ public class OutboxProcessor {
         String key = event.getAggregateId();
         String value = event.getPayload();
 
-        // Synchronous send to ensure delivery before marking as published
+        
         try {
-            kafkaTemplate.send(topic, key, value).get();
-        } catch (Exception e) {
-            throw new OutboxException("Kafka publish failed for event " + event.getId(), e);
+            kafkaOperations.send(topic, key, value).get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new OutboxException("Kafka publish interrupted for event " + event.getId(), e);
+        } catch (java.util.concurrent.ExecutionException e) {
+            throw new OutboxException("Kafka publish failed for event " + event.getId(), e.getCause());
         }
     }
 
-    /**
-     * Cleanup old published events daily.
-     */
-    @Scheduled(cron = "0 0 3 * * *") // 3 AM daily
+    
+    @Scheduled(cron = "0 0 3 * * *") 
     @Transactional
     public void cleanupOldEvents() {
         Instant cutoff = Instant.now().minus(RETENTION_DAYS, ChronoUnit.DAYS);
@@ -91,12 +87,15 @@ public class OutboxProcessor {
         log.info("Cleaned up {} old outbox events (before {})", deleted, cutoff);
     }
 
-    /**
-     * Retry failed events (call manually or schedule).
-     */
+    
     @Transactional
     public void retryFailedEvents() {
         List<OutboxEvent> failedEvents = outboxRepository.findByStatusOrderByCreatedAtAsc(OutboxStatus.FAILED);
+
+        if (failedEvents == null || failedEvents.isEmpty()) {
+            log.debug("No failed outbox events to retry");
+            return;
+        }
 
         log.info("Retrying {} failed outbox events", failedEvents.size());
 
@@ -112,16 +111,12 @@ public class OutboxProcessor {
         }
     }
 
-    /**
-     * Get pending event count (for monitoring/alerting).
-     */
+    
     public long getPendingCount() {
         return outboxRepository.countByStatus(OutboxStatus.PENDING);
     }
 
-    /**
-     * Get failed event count (for monitoring/alerting).
-     */
+    
     public long getFailedCount() {
         return outboxRepository.countByStatus(OutboxStatus.FAILED);
     }

@@ -48,7 +48,7 @@ class BulkheadTest {
             CountDownLatch releaseLatch = new CountDownLatch(1);
             AtomicInteger rejected = new AtomicInteger(0);
 
-            // Fill the bulkhead
+            
             ExecutorService executor = Executors.newFixedThreadPool(3);
             for (int i = 0; i < 2; i++) {
                 executor.submit(() -> {
@@ -66,7 +66,7 @@ class BulkheadTest {
 
             blockedLatch.await(1, TimeUnit.SECONDS);
 
-            // Try to acquire when full
+            
             try {
                 bulkhead.execute(() -> "should fail");
                 fail("Should have thrown BulkheadFullException");
@@ -125,8 +125,9 @@ class BulkheadTest {
         void shouldLimitConcurrentExecutions() throws Exception {
             Bulkhead bulkhead = Bulkhead.threadPool()
                     .name("concurrent-test")
+                    .corePoolSize(3)
                     .maxConcurrentCalls(3)
-                    .queueCapacity(0) // No queue - reject immediately
+                    .queueCapacity(0) 
                     .maxWaitDuration(Duration.ofSeconds(5))
                     .build();
 
@@ -156,7 +157,7 @@ class BulkheadTest {
 
             startLatch.await(2, TimeUnit.SECONDS);
             
-            // All 3 should be running
+            
             assertEquals(3, currentConcurrent.get());
             
             endLatch.countDown();
@@ -170,6 +171,7 @@ class BulkheadTest {
         void shouldTrackRejectedCalls() throws Exception {
             Bulkhead bulkhead = Bulkhead.threadPool()
                     .name("reject-test")
+                    .corePoolSize(1)
                     .maxConcurrentCalls(1)
                     .queueCapacity(0)
                     .maxWaitDuration(Duration.ofSeconds(1))
@@ -178,7 +180,7 @@ class BulkheadTest {
             CountDownLatch blockLatch = new CountDownLatch(1);
             CountDownLatch releaseLatch = new CountDownLatch(1);
 
-            // Block the single thread
+            
             CompletableFuture.runAsync(() -> {
                 bulkhead.execute(() -> {
                     blockLatch.countDown();
@@ -193,12 +195,12 @@ class BulkheadTest {
 
             blockLatch.await(1, TimeUnit.SECONDS);
 
-            // Should be rejected
+            
             try {
                 bulkhead.execute(() -> "should fail");
                 fail("Expected BulkheadFullException");
             } catch (BulkheadFullException e) {
-                // Expected
+                
             }
 
             assertEquals(1, bulkhead.getMetrics().getRejectedCalls());
@@ -230,12 +232,12 @@ class BulkheadTest {
                 .maxConcurrentCalls(1)
                 .build();
 
-        // First call throws
+        
         try {
             bulkhead.execute(() -> { throw new RuntimeException("fail"); });
         } catch (RuntimeException ignored) {}
 
-        // Second call should succeed (permit was released)
+        
         String result = bulkhead.execute(() -> "success");
         assertEquals("success", result);
     }

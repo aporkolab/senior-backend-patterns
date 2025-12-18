@@ -19,7 +19,7 @@ import org.junit.jupiter.api.Test;
 
 class RateLimiterTest {
 
-    // ==================== TOKEN BUCKET TESTS ====================
+    
 
     @Nested
     @DisplayName("Token Bucket Algorithm")
@@ -35,7 +35,7 @@ class RateLimiterTest {
                     .refillPeriod(Duration.ofSeconds(1))
                     .build();
 
-            // Should allow all 10 requests
+            
             for (int i = 0; i < 10; i++) {
                 assertThat(limiter.tryAcquire("user-1")).isTrue();
             }
@@ -50,12 +50,12 @@ class RateLimiterTest {
                     .refillPeriod(Duration.ofSeconds(10))
                     .build();
 
-            // Exhaust bucket
+            
             for (int i = 0; i < 5; i++) {
                 limiter.tryAcquire("user-1");
             }
 
-            // Should reject
+            
             assertThat(limiter.tryAcquire("user-1")).isFalse();
         }
 
@@ -68,16 +68,16 @@ class RateLimiterTest {
                     .refillPeriod(Duration.ofMillis(100))
                     .build();
 
-            // Exhaust bucket
+            
             for (int i = 0; i < 5; i++) {
                 limiter.tryAcquire("user-1");
             }
             assertThat(limiter.tryAcquire("user-1")).isFalse();
 
-            // Wait for refill
+            
             Thread.sleep(150);
 
-            // Should have tokens again
+            
             assertThat(limiter.tryAcquire("user-1")).isTrue();
         }
 
@@ -86,17 +86,17 @@ class RateLimiterTest {
         void shouldNotExceedCapacityOnRefill() throws InterruptedException {
             RateLimiter limiter = RateLimiter.tokenBucket()
                     .capacity(10)
-                    .refillRate(100) // Would overfill
+                    .refillRate(100) 
                     .refillPeriod(Duration.ofMillis(50))
                     .build();
 
-            // Use some tokens
+            
             limiter.tryAcquire("user-1", 3);
 
-            // Wait for multiple refill periods
+            
             Thread.sleep(200);
 
-            // Should be capped at capacity
+            
             assertThat(limiter.getRemainingPermits("user-1")).isLessThanOrEqualTo(10);
         }
 
@@ -109,11 +109,11 @@ class RateLimiterTest {
                     .refillPeriod(Duration.ofSeconds(1))
                     .build();
 
-            // Acquire 5 permits at once
+            
             assertThat(limiter.tryAcquire("user-1", 5)).isTrue();
             assertThat(limiter.getRemainingPermits("user-1")).isEqualTo(5);
 
-            // Try to acquire more than remaining
+            
             assertThat(limiter.tryAcquire("user-1", 6)).isFalse();
         }
 
@@ -126,19 +126,19 @@ class RateLimiterTest {
                     .refillPeriod(Duration.ofSeconds(10))
                     .build();
 
-            // Exhaust user-1
+            
             for (int i = 0; i < 5; i++) {
                 limiter.tryAcquire("user-1");
             }
 
-            // user-2 should still have full capacity
+            
             for (int i = 0; i < 5; i++) {
                 assertThat(limiter.tryAcquire("user-2")).isTrue();
             }
         }
     }
 
-    // ==================== SLIDING WINDOW TESTS ====================
+    
 
     @Nested
     @DisplayName("Sliding Window Algorithm")
@@ -166,12 +166,12 @@ class RateLimiterTest {
                     .windowSize(Duration.ofMinutes(1))
                     .build();
 
-            // Fill the window
+            
             for (int i = 0; i < 5; i++) {
                 limiter.tryAcquire("user-1");
             }
 
-            // Should reject
+            
             assertThat(limiter.tryAcquire("user-1")).isFalse();
         }
 
@@ -183,16 +183,16 @@ class RateLimiterTest {
                     .windowSize(Duration.ofMillis(200))
                     .build();
 
-            // Fill the window
+            
             for (int i = 0; i < 5; i++) {
                 limiter.tryAcquire("user-1");
             }
             assertThat(limiter.tryAcquire("user-1")).isFalse();
 
-            // Wait for window to slide
+            
             Thread.sleep(250);
 
-            // Should allow again
+            
             assertThat(limiter.tryAcquire("user-1")).isTrue();
         }
 
@@ -212,7 +212,7 @@ class RateLimiterTest {
         }
     }
 
-    // ==================== FIXED WINDOW TESTS ====================
+    
 
     @Nested
     @DisplayName("Fixed Window Algorithm")
@@ -255,16 +255,16 @@ class RateLimiterTest {
                     .windowSize(Duration.ofMillis(100))
                     .build();
 
-            // Fill the window
+            
             for (int i = 0; i < 5; i++) {
                 limiter.tryAcquire("user-1");
             }
             assertThat(limiter.tryAcquire("user-1")).isFalse();
 
-            // Wait for new window
+            
             Thread.sleep(150);
 
-            // Counter should be reset
+            
             assertThat(limiter.tryAcquire("user-1")).isTrue();
             assertThat(limiter.getRemainingPermits("user-1")).isEqualTo(4);
         }
@@ -285,7 +285,7 @@ class RateLimiterTest {
         }
     }
 
-    // ==================== COMMON FUNCTIONALITY TESTS ====================
+    
 
     @Nested
     @DisplayName("Common Functionality")
@@ -300,16 +300,16 @@ class RateLimiterTest {
                     .refillPeriod(Duration.ofMinutes(1))
                     .build();
 
-            // Exhaust bucket
+            
             for (int i = 0; i < 5; i++) {
                 limiter.tryAcquire("user-1");
             }
             assertThat(limiter.tryAcquire("user-1")).isFalse();
 
-            // Reset
+            
             limiter.reset("user-1");
 
-            // Should be back to full capacity
+            
             assertThat(limiter.getRemainingPermits("user-1")).isEqualTo(5);
         }
 
@@ -355,10 +355,10 @@ class RateLimiterTest {
                     .refillPeriod(Duration.ofMillis(100))
                     .build();
 
-            // First acquire succeeds
+            
             assertThat(limiter.acquire("user-1", Duration.ofMillis(50))).isTrue();
 
-            // Second should wait for refill
+            
             long start = System.currentTimeMillis();
             assertThat(limiter.acquire("user-1", Duration.ofMillis(200))).isTrue();
             long elapsed = System.currentTimeMillis() - start;
@@ -379,7 +379,7 @@ class RateLimiterTest {
         }
     }
 
-    // ==================== BUILDER VALIDATION TESTS ====================
+    
 
     @Nested
     @DisplayName("Builder Validation")
@@ -414,7 +414,7 @@ class RateLimiterTest {
         }
     }
 
-    // ==================== CONCURRENCY TESTS ====================
+    
 
     @Nested
     @DisplayName("Concurrency")
@@ -423,10 +423,11 @@ class RateLimiterTest {
         @Test
         @DisplayName("should handle concurrent requests safely")
         void shouldHandleConcurrentRequests() throws InterruptedException {
+            
             RateLimiter limiter = RateLimiter.tokenBucket()
                     .capacity(100)
-                    .refillRate(0)
-                    .refillPeriod(Duration.ofMinutes(1))
+                    .refillRate(1)
+                    .refillPeriod(Duration.ofHours(1))
                     .build();
 
             int threadCount = 50;
@@ -457,7 +458,7 @@ class RateLimiterTest {
             doneLatch.await(10, TimeUnit.SECONDS);
             executor.shutdown();
 
-            // Exactly 100 should succeed (bucket capacity)
+            
             assertThat(successCount.get()).isEqualTo(100);
         }
 
@@ -496,14 +497,14 @@ class RateLimiterTest {
             doneLatch.await(10, TimeUnit.SECONDS);
             executor.shutdown();
 
-            // Each user should have exactly 10 successes
+            
             for (AtomicInteger count : successCounts) {
                 assertThat(count.get()).isEqualTo(10);
             }
         }
     }
 
-    // ==================== EXCEPTION TESTS ====================
+    
 
     @Nested
     @DisplayName("RateLimitExceededException")

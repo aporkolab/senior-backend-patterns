@@ -21,7 +21,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.core.KafkaOperations;
 import org.springframework.kafka.support.SendResult;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -30,7 +30,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 class DeadLetterQueueHandlerTest {
 
     @Mock
-    private KafkaTemplate<String, String> kafkaTemplate;
+    private KafkaOperations<String, String> kafkaOperations;
 
     private ObjectMapper objectMapper;
     private DeadLetterQueueHandler dlqHandler;
@@ -38,8 +38,8 @@ class DeadLetterQueueHandlerTest {
     @BeforeEach
     void setUp() {
         objectMapper = new ObjectMapper();
-        objectMapper.findAndRegisterModules(); // For Java 8 date/time
-        dlqHandler = new DeadLetterQueueHandler(kafkaTemplate, objectMapper);
+        objectMapper.findAndRegisterModules(); 
+        dlqHandler = new DeadLetterQueueHandler(kafkaOperations, objectMapper);
     }
 
     @Nested
@@ -57,7 +57,7 @@ class DeadLetterQueueHandlerTest {
             dlqHandler.sendToDlq(record, exception, FailureType.VALIDATION_ERROR);
 
             ArgumentCaptor<ProducerRecord<String, String>> captor = ArgumentCaptor.forClass(ProducerRecord.class);
-            verify(kafkaTemplate).send(captor.capture());
+            verify(kafkaOperations).send(captor.capture());
 
             assertThat(captor.getValue().topic()).isEqualTo("orders.dlq");
         }
@@ -72,7 +72,7 @@ class DeadLetterQueueHandlerTest {
             dlqHandler.sendToDlq(record, new RuntimeException("error"), FailureType.PERMANENT);
 
             ArgumentCaptor<ProducerRecord<String, String>> captor = ArgumentCaptor.forClass(ProducerRecord.class);
-            verify(kafkaTemplate).send(captor.capture());
+            verify(kafkaOperations).send(captor.capture());
 
             assertThat(captor.getValue().key()).isEqualTo("order-123");
         }
@@ -88,7 +88,7 @@ class DeadLetterQueueHandlerTest {
             dlqHandler.sendToDlq(record, exception, FailureType.VALIDATION_ERROR);
 
             ArgumentCaptor<ProducerRecord<String, String>> captor = ArgumentCaptor.forClass(ProducerRecord.class);
-            verify(kafkaTemplate).send(captor.capture());
+            verify(kafkaOperations).send(captor.capture());
 
             DlqMessage dlqMessage = objectMapper.readValue(captor.getValue().value(), DlqMessage.class);
             assertThat(dlqMessage.getFailureReason()).contains("IllegalStateException");
@@ -105,7 +105,7 @@ class DeadLetterQueueHandlerTest {
             dlqHandler.sendToDlq(record, new RuntimeException("error"), FailureType.DESERIALIZATION_ERROR);
 
             ArgumentCaptor<ProducerRecord<String, String>> captor = ArgumentCaptor.forClass(ProducerRecord.class);
-            verify(kafkaTemplate).send(captor.capture());
+            verify(kafkaOperations).send(captor.capture());
 
             DlqMessage dlqMessage = objectMapper.readValue(captor.getValue().value(), DlqMessage.class);
             assertThat(dlqMessage.getFailureType()).isEqualTo(FailureType.DESERIALIZATION_ERROR);
@@ -123,7 +123,7 @@ class DeadLetterQueueHandlerTest {
             dlqHandler.sendToDlq(record, new RuntimeException("error"), FailureType.UNKNOWN);
 
             ArgumentCaptor<ProducerRecord<String, String>> captor = ArgumentCaptor.forClass(ProducerRecord.class);
-            verify(kafkaTemplate).send(captor.capture());
+            verify(kafkaOperations).send(captor.capture());
 
             DlqMessage dlqMessage = objectMapper.readValue(captor.getValue().value(), DlqMessage.class);
             assertThat(dlqMessage.getOriginalTopic()).isEqualTo("original-topic");
@@ -142,7 +142,7 @@ class DeadLetterQueueHandlerTest {
             dlqHandler.sendToDlq(record, new RuntimeException("err"), FailureType.MAX_RETRIES_EXCEEDED);
 
             ArgumentCaptor<ProducerRecord<String, String>> captor = ArgumentCaptor.forClass(ProducerRecord.class);
-            verify(kafkaTemplate).send(captor.capture());
+            verify(kafkaOperations).send(captor.capture());
 
             ProducerRecord<String, String> sent = captor.getValue();
             assertThat(sent.headers().lastHeader("dlq-reason")).isNotNull();
@@ -162,7 +162,7 @@ class DeadLetterQueueHandlerTest {
             dlqHandler.sendToDlq(record, exception, FailureType.UNKNOWN);
 
             ArgumentCaptor<ProducerRecord<String, String>> captor = ArgumentCaptor.forClass(ProducerRecord.class);
-            verify(kafkaTemplate).send(captor.capture());
+            verify(kafkaOperations).send(captor.capture());
 
             DlqMessage dlqMessage = objectMapper.readValue(captor.getValue().value(), DlqMessage.class);
             assertThat(dlqMessage.getStackTrace()).isNotEmpty();
@@ -193,17 +193,17 @@ class DeadLetterQueueHandlerTest {
 
             mockKafkaSend();
 
-            // First two retries
+            
             for (int i = 0; i < 2; i++) {
                 try {
                     dlqHandler.handleFailure(record, exception, 3);
                 } catch (RetryableException ignored) {}
             }
 
-            // Third attempt should send to DLQ
+            
             dlqHandler.handleFailure(record, exception, 3);
 
-            verify(kafkaTemplate).send(any(ProducerRecord.class));
+            verify(kafkaOperations).send(any(ProducerRecord.class));
         }
 
         @Test
@@ -213,14 +213,14 @@ class DeadLetterQueueHandlerTest {
             ConsumerRecord<String, String> record2 = createRecord("orders", "k2", "{}", 0, 200L);
             Exception exception = new RuntimeException("error");
 
-            // Fail record1 twice
+            
             for (int i = 0; i < 2; i++) {
                 try {
                     dlqHandler.handleFailure(record1, exception, 3);
                 } catch (RetryableException ignored) {}
             }
 
-            // record2 should start fresh
+            
             assertThatThrownBy(() -> dlqHandler.handleFailure(record2, exception, 3))
                     .isInstanceOf(RetryableException.class)
                     .hasMessageContaining("Retry attempt 1");
@@ -232,15 +232,15 @@ class DeadLetterQueueHandlerTest {
             ConsumerRecord<String, String> record = createRecord("orders", "o1", "{}", 0, 100L);
             Exception exception = new RuntimeException("error");
 
-            // Fail once
+            
             try {
                 dlqHandler.handleFailure(record, exception, 3);
             } catch (RetryableException ignored) {}
 
-            // Clear on success
+            
             dlqHandler.clearAttempts(record);
 
-            // Next failure should be attempt 1 again
+            
             assertThatThrownBy(() -> dlqHandler.handleFailure(record, exception, 3))
                     .isInstanceOf(RetryableException.class)
                     .hasMessageContaining("Retry attempt 1");
@@ -254,17 +254,17 @@ class DeadLetterQueueHandlerTest {
 
             mockKafkaSend();
 
-            // Default is 3 retries
+            
             for (int i = 0; i < 2; i++) {
                 try {
                     dlqHandler.handleFailure(record, exception);
                 } catch (RetryableException ignored) {}
             }
 
-            // Third attempt sends to DLQ
+            
             dlqHandler.handleFailure(record, exception);
 
-            verify(kafkaTemplate).send(any(ProducerRecord.class));
+            verify(kafkaOperations).send(any(ProducerRecord.class));
         }
     }
 
@@ -319,7 +319,7 @@ class DeadLetterQueueHandlerTest {
         }
     }
 
-    // Helper methods
+    
     private ConsumerRecord<String, String> createRecord(String topic, String key, String value) {
         return createRecord(topic, key, value, 0, 0L);
     }
@@ -330,12 +330,12 @@ class DeadLetterQueueHandlerTest {
 
     @SuppressWarnings("unchecked")
     private void mockKafkaSend() {
-        SendResult<String, String> sendResult = mock(SendResult.class);
         RecordMetadata metadata = new RecordMetadata(
                 new TopicPartition("test.dlq", 0), 0L, 0, 0L, 0, 0
         );
-        when(sendResult.getRecordMetadata()).thenReturn(metadata);
-        when(kafkaTemplate.send(any(ProducerRecord.class)))
+        ProducerRecord<String, String> producerRecord = new ProducerRecord<>("test.dlq", "key", "value");
+        SendResult<String, String> sendResult = new SendResult<>(producerRecord, metadata);
+        when(kafkaOperations.send(any(ProducerRecord.class)))
                 .thenReturn(CompletableFuture.completedFuture(sendResult));
     }
 }

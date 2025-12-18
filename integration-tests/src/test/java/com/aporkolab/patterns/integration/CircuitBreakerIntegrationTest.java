@@ -32,17 +32,26 @@ import org.testcontainers.utility.DockerImageName;
 import com.aporkolab.patterns.resilience.circuitbreaker.CircuitBreaker;
 import com.aporkolab.patterns.resilience.circuitbreaker.CircuitBreakerOpenException;
 
-/**
- * Integration tests for Circuit Breaker with real HTTP calls.
- * 
- * Uses WireMock container to simulate:
- * - Healthy service
- * - Failing service
- * - Slow service (timeouts)
- * - Recovering service
- */
+
 @Testcontainers
 class CircuitBreakerIntegrationTest {
+
+    
+    private <T> T sendRequest(HttpRequest request, HttpResponse.BodyHandler<T> handler) {
+        try {
+            return httpClient.send(request, handler).body();
+        } catch (Exception e) {
+            throw new RuntimeException("HTTP request failed", e);
+        }
+    }
+
+    private int sendRequestGetStatus(HttpRequest request) {
+        try {
+            return httpClient.send(request, HttpResponse.BodyHandlers.ofString()).statusCode();
+        } catch (Exception e) {
+            throw new RuntimeException("HTTP request failed", e);
+        }
+    }
 
     @Container
     static GenericContainer<?> wiremock = new GenericContainer<>(
@@ -62,21 +71,21 @@ class CircuitBreakerIntegrationTest {
 
         baseUrl = "http://" + wiremock.getHost() + ":" + wiremock.getMappedPort(8080);
 
-        // Setup WireMock stubs
+        
         setupWireMockStubs();
     }
 
     private static void setupWireMockStubs() throws Exception {
-        // Healthy endpoint
+        
         createStub("healthy", 200, "{\"status\":\"ok\"}", 0);
 
-        // Failing endpoint (500)
+        
         createStub("failing", 500, "{\"error\":\"Internal Server Error\"}", 0);
 
-        // Slow endpoint (3 second delay)
+        
         createStub("slow", 200, "{\"status\":\"ok\"}", 3000);
 
-        // Flaky endpoint (will be toggled)
+        
         createStub("flaky", 200, "{\"status\":\"ok\"}", 0);
     }
 
@@ -120,23 +129,23 @@ class CircuitBreakerIntegrationTest {
     @Test
     @DisplayName("should allow calls when service is healthy")
     void shouldAllowCallsWhenHealthy() throws Exception {
-        // Given
+        
         int callCount = 10;
         List<Integer> statusCodes = new ArrayList<>();
 
-        // When
+        
         for (int i = 0; i < callCount; i++) {
             int status = circuitBreaker.execute(() -> {
                 HttpRequest request = HttpRequest.newBuilder()
                         .uri(URI.create(baseUrl + "/healthy"))
                         .GET()
                         .build();
-                return httpClient.send(request, HttpResponse.BodyHandlers.ofString()).statusCode();
+                return sendRequestGetStatus(request);
             });
             statusCodes.add(status);
         }
 
-        // Then
+        
         assertThat(statusCodes).hasSize(callCount);
         assertThat(statusCodes).containsOnly(200);
         assertThat(circuitBreaker.getState()).isEqualTo(CircuitBreaker.State.CLOSED);
@@ -145,11 +154,11 @@ class CircuitBreakerIntegrationTest {
     @Test
     @DisplayName("should open circuit after failure threshold")
     void shouldOpenCircuitAfterFailures() {
-        // Given
+        
         AtomicInteger callAttempts = new AtomicInteger(0);
         AtomicInteger rejectedCalls = new AtomicInteger(0);
 
-        // When - Make calls until circuit opens
+        
         for (int i = 0; i < 10; i++) {
             try {
                 circuitBreaker.execute(() -> {
@@ -158,49 +167,49 @@ class CircuitBreakerIntegrationTest {
                             .uri(URI.create(baseUrl + "/failing"))
                             .GET()
                             .build();
-                    HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-                    if (response.statusCode() >= 500) {
-                        throw new RuntimeException("Server error: " + response.statusCode());
+                    int statusCode = sendRequestGetStatus(request);
+                    if (statusCode >= 500) {
+                        throw new RuntimeException("Server error: " + statusCode);
                     }
-                    return response.statusCode();
+                    return statusCode;
                 });
             } catch (CircuitBreakerOpenException e) {
                 rejectedCalls.incrementAndGet();
             } catch (Exception e) {
-                // Expected failures
+                
             }
         }
 
-        // Then
+        
         assertThat(circuitBreaker.getState()).isEqualTo(CircuitBreaker.State.OPEN);
-        assertThat(callAttempts.get()).isEqualTo(3); // Only 3 calls before circuit opened
-        assertThat(rejectedCalls.get()).isEqualTo(7); // Rest were rejected
+        assertThat(callAttempts.get()).isEqualTo(3); 
+        assertThat(rejectedCalls.get()).isEqualTo(7); 
     }
 
     @Test
     @DisplayName("should transition to half-open after timeout")
     void shouldTransitionToHalfOpenAfterTimeout() throws Exception {
-        // Given - Open the circuit
+        
         for (int i = 0; i < 3; i++) {
             try {
                 circuitBreaker.execute(() -> {
                     throw new RuntimeException("Simulated failure");
                 });
             } catch (Exception e) {
-                // Expected
+                
             }
         }
         assertThat(circuitBreaker.getState()).isEqualTo(CircuitBreaker.State.OPEN);
 
-        // When - Wait for open duration
+        
         await().atMost(5, TimeUnit.SECONDS)
                 .pollInterval(200, TimeUnit.MILLISECONDS)
                 .untilAsserted(() -> {
-                    // Try a call to trigger half-open
+                    
                     try {
                         circuitBreaker.execute(() -> "test");
                     } catch (Exception e) {
-                        // May still fail
+                        
                     }
                     assertThat(circuitBreaker.getState())
                             .isIn(CircuitBreaker.State.HALF_OPEN, CircuitBreaker.State.CLOSED);
@@ -210,46 +219,46 @@ class CircuitBreakerIntegrationTest {
     @Test
     @DisplayName("should close circuit after successful calls in half-open")
     void shouldCloseCircuitAfterSuccessfulHalfOpen() throws Exception {
-        // Given - Open the circuit
+        
         for (int i = 0; i < 3; i++) {
             try {
                 circuitBreaker.execute(() -> {
                     throw new RuntimeException("Failure");
                 });
             } catch (Exception e) {
-                // Expected
+                
             }
         }
 
-        // Wait for half-open
+        
         Thread.sleep(2500);
 
-        // When - Make successful calls
+        
         for (int i = 0; i < 2; i++) {
             circuitBreaker.execute(() -> {
                 HttpRequest request = HttpRequest.newBuilder()
                         .uri(URI.create(baseUrl + "/healthy"))
                         .GET()
                         .build();
-                return httpClient.send(request, HttpResponse.BodyHandlers.ofString()).statusCode();
+                return sendRequestGetStatus(request);
             });
         }
 
-        // Then
+        
         assertThat(circuitBreaker.getState()).isEqualTo(CircuitBreaker.State.CLOSED);
     }
 
     @Test
     @DisplayName("should handle concurrent requests correctly")
     void shouldHandleConcurrentRequests() throws Exception {
-        // Given
+        
         int threadCount = 50;
         ExecutorService executor = Executors.newFixedThreadPool(threadCount);
         CountDownLatch startLatch = new CountDownLatch(1);
         CountDownLatch doneLatch = new CountDownLatch(threadCount);
         CopyOnWriteArrayList<String> results = new CopyOnWriteArrayList<>();
 
-        // When - Launch concurrent requests
+        
         for (int i = 0; i < threadCount; i++) {
             executor.submit(() -> {
                 try {
@@ -259,8 +268,7 @@ class CircuitBreakerIntegrationTest {
                                 .uri(URI.create(baseUrl + "/healthy"))
                                 .GET()
                                 .build();
-                        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-                        return "status:" + response.statusCode();
+                        return "status:" + sendRequestGetStatus(request);
                     });
                     results.add(result);
                 } catch (Exception e) {
@@ -275,7 +283,7 @@ class CircuitBreakerIntegrationTest {
         doneLatch.await(30, TimeUnit.SECONDS);
         executor.shutdown();
 
-        // Then
+        
         assertThat(results).hasSize(threadCount);
         long successCount = results.stream().filter(r -> r.equals("status:200")).count();
         assertThat(successCount).isEqualTo(threadCount);
@@ -284,30 +292,30 @@ class CircuitBreakerIntegrationTest {
     @Test
     @DisplayName("should use fallback when circuit is open")
     void shouldUseFallbackWhenOpen() throws Exception {
-        // Given - Open the circuit
+        
         for (int i = 0; i < 3; i++) {
             try {
                 circuitBreaker.execute(() -> {
                     throw new RuntimeException("Failure");
                 });
             } catch (Exception e) {
-                // Expected
+                
             }
         }
 
-        // When
+        
         String result = circuitBreaker.executeWithFallback(
                 () -> {
                     HttpRequest request = HttpRequest.newBuilder()
                             .uri(URI.create(baseUrl + "/failing"))
                             .GET()
                             .build();
-                    return httpClient.send(request, HttpResponse.BodyHandlers.ofString()).body();
+                    return sendRequest(request, HttpResponse.BodyHandlers.ofString());
                 },
                 () -> "{\"fallback\":true,\"cached\":\"data\"}"
         );
 
-        // Then
+        
         assertThat(result).contains("fallback");
         assertThat(circuitBreaker.getState()).isEqualTo(CircuitBreaker.State.OPEN);
     }
@@ -315,36 +323,36 @@ class CircuitBreakerIntegrationTest {
     @Test
     @DisplayName("should notify listeners on state change")
     void shouldNotifyListenersOnStateChange() throws Exception {
-        // Given
+        
         List<String> stateChanges = new CopyOnWriteArrayList<>();
         circuitBreaker.onStateChange((from, to) ->
                 stateChanges.add(from.name() + "->" + to.name()));
 
-        // When - Trigger failures to open circuit
+        
         for (int i = 0; i < 3; i++) {
             try {
                 circuitBreaker.execute(() -> {
                     throw new RuntimeException("Failure");
                 });
             } catch (Exception e) {
-                // Expected
+                
             }
         }
 
-        // Then
+        
         assertThat(stateChanges).contains("CLOSED->OPEN");
     }
 
     @Test
     @DisplayName("should handle high load without race conditions")
     void shouldHandleHighLoadWithoutRaceConditions() throws Exception {
-        // Given
+        
         int iterations = 1000;
         AtomicInteger successCount = new AtomicInteger(0);
         AtomicInteger failureCount = new AtomicInteger(0);
         AtomicInteger rejectedCount = new AtomicInteger(0);
 
-        // When - Rapid fire requests
+        
         List<CompletableFuture<Void>> futures = new ArrayList<>();
 
         for (int i = 0; i < iterations; i++) {
@@ -352,7 +360,7 @@ class CircuitBreakerIntegrationTest {
             CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
                 try {
                     circuitBreaker.execute(() -> {
-                        // Alternate between success and failure
+                        
                         if (index % 10 == 0) {
                             throw new RuntimeException("Periodic failure");
                         }
@@ -370,11 +378,11 @@ class CircuitBreakerIntegrationTest {
 
         CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
 
-        // Then
+        
         int total = successCount.get() + failureCount.get() + rejectedCount.get();
         assertThat(total).isEqualTo(iterations);
 
-        // Circuit breaker state should be consistent
+        
         CircuitBreaker.State finalState = circuitBreaker.getState();
         assertThat(finalState).isIn(
                 CircuitBreaker.State.CLOSED,

@@ -1,8 +1,12 @@
 package com.aporkolab.patterns.messaging.dlq;
 
 import java.time.Instant;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 
@@ -10,43 +14,79 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.core.KafkaOperations;
 import org.springframework.stereotype.Component;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-/**
- * Handles failed message routing to Dead Letter Queue.
- * 
- * Design decisions:
- * - Enriches failed messages with full context for debugging
- * - Supports both immediate DLQ (permanent failures) and retry-then-DLQ
- * - Tracks attempt counts in memory (consider Redis for distributed scenarios)
- * - Preserves original message headers
- */
+
 @Component
 public class DeadLetterQueueHandler {
 
     private static final Logger log = LoggerFactory.getLogger(DeadLetterQueueHandler.class);
     private static final String DLQ_SUFFIX = ".dlq";
     private static final int DEFAULT_MAX_RETRIES = 3;
+    private static final long ATTEMPT_TTL_MS = TimeUnit.MINUTES.toMillis(30);
+    private static final long CLEANUP_INTERVAL_MS = TimeUnit.MINUTES.toMillis(5);
 
-    private final KafkaTemplate<String, String> kafkaTemplate;
+    private final KafkaOperations<String, String> kafkaOperations;
     private final ObjectMapper objectMapper;
     private final String hostname;
 
-    // Track retry attempts per message (key = topic:partition:offset)
-    private final Map<String, AtomicInteger> attemptTracker = new ConcurrentHashMap<>();
+    
+    private final Map<String, AttemptEntry> attemptTracker = new ConcurrentHashMap<>();
+    private final ScheduledExecutorService cleanupScheduler;
 
-    public DeadLetterQueueHandler(KafkaTemplate<String, String> kafkaTemplate, ObjectMapper objectMapper) {
-        this.kafkaTemplate = kafkaTemplate;
-        this.objectMapper = objectMapper;
-        this.hostname = System.getenv().getOrDefault("HOSTNAME", "unknown");
+    
+    private static class AttemptEntry {
+        final AtomicInteger attempts = new AtomicInteger(0);
+        volatile long lastAttemptTime = System.currentTimeMillis();
+
+        int incrementAndGet() {
+            lastAttemptTime = System.currentTimeMillis();
+            return attempts.incrementAndGet();
+        }
+
+        boolean isExpired() {
+            return System.currentTimeMillis() - lastAttemptTime > ATTEMPT_TTL_MS;
+        }
     }
 
-    /**
-     * Handle a processing failure with automatic retry/DLQ decision.
-     */
+    public DeadLetterQueueHandler(KafkaOperations<String, String> kafkaOperations, ObjectMapper objectMapper) {
+        this.kafkaOperations = kafkaOperations;
+        this.objectMapper = objectMapper;
+        this.hostname = System.getenv().getOrDefault("HOSTNAME", "unknown");
+
+        
+        this.cleanupScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "dlq-attempt-cleanup");
+            t.setDaemon(true);
+            return t;
+        });
+        this.cleanupScheduler.scheduleAtFixedRate(
+                this::cleanupExpiredAttempts,
+                CLEANUP_INTERVAL_MS,
+                CLEANUP_INTERVAL_MS,
+                TimeUnit.MILLISECONDS
+        );
+    }
+
+    
+    private void cleanupExpiredAttempts() {
+        int removed = 0;
+        Iterator<Map.Entry<String, AttemptEntry>> it = attemptTracker.entrySet().iterator();
+        while (it.hasNext()) {
+            if (it.next().getValue().isExpired()) {
+                it.remove();
+                removed++;
+            }
+        }
+        if (removed > 0) {
+            log.debug("Cleaned up {} expired attempt tracker entries", removed);
+        }
+    }
+
+    
     public void handleFailure(ConsumerRecord<String, String> record, Exception exception) {
         handleFailure(record, exception, DEFAULT_MAX_RETRIES);
     }
@@ -54,7 +94,7 @@ public class DeadLetterQueueHandler {
     public void handleFailure(ConsumerRecord<String, String> record, Exception exception, int maxRetries) {
         String messageKey = buildMessageKey(record);
         int attempts = attemptTracker
-                .computeIfAbsent(messageKey, k -> new AtomicInteger(0))
+                .computeIfAbsent(messageKey, k -> new AttemptEntry())
                 .incrementAndGet();
 
         if (attempts >= maxRetries) {
@@ -63,14 +103,12 @@ public class DeadLetterQueueHandler {
             attemptTracker.remove(messageKey);
         } else {
             log.info("Retry {}/{} for message {}", attempts, maxRetries, messageKey);
-            // Let the consumer retry (by not committing the offset)
+            
             throw new RetryableException("Retry attempt " + attempts, exception);
         }
     }
 
-    /**
-     * Send a message directly to DLQ (for permanent failures).
-     */
+    
     public void sendToDlq(ConsumerRecord<String, String> record, Exception exception, FailureType failureType) {
         String dlqTopic = record.topic() + DLQ_SUFFIX;
 
@@ -97,16 +135,16 @@ public class DeadLetterQueueHandler {
                     dlqPayload
             );
 
-            // Preserve original headers
+            
             record.headers().forEach(header ->
                     dlqRecord.headers().add(header.key(), header.value())
             );
 
-            // Add DLQ-specific headers
+            
             dlqRecord.headers().add("dlq-reason", failureType.name().getBytes());
             dlqRecord.headers().add("dlq-timestamp", Instant.now().toString().getBytes());
 
-            kafkaTemplate.send(dlqRecord)
+            kafkaOperations.send(dlqRecord)
                     .whenComplete((result, ex) -> {
                         if (ex != null) {
                             log.error("Failed to send message to DLQ topic {}: {}", dlqTopic, ex.getMessage());
@@ -119,30 +157,42 @@ public class DeadLetterQueueHandler {
         } catch (Exception e) {
             log.error("Critical: Failed to serialize DLQ message for topic {}: {}",
                     record.topic(), e.getMessage());
-            // In production, consider a fallback (e.g., write to local file, alert)
+            
         }
     }
 
-    /**
-     * Reprocess messages from DLQ with optional transformation.
-     */
+    
     public void reprocessFromDlq(String dlqTopic, Function<DlqMessage, String> transformer, int maxAttempts) {
-        // Implementation would:
-        // 1. Consume from DLQ topic
-        // 2. Apply transformer to fix known issues
-        // 3. Republish to original topic
-        // 4. Track reprocess attempts
-        // 5. Move to "permanent-dlq" after maxAttempts
+        
+        
+        
+        
+        
+        
 
         log.info("Reprocessing from {} with max {} attempts", dlqTopic, maxAttempts);
-        // Actual implementation depends on your Kafka consumer setup
+        
     }
 
-    /**
-     * Clear retry tracker entry (call after successful processing).
-     */
+    
     public void clearAttempts(ConsumerRecord<String, String> record) {
         attemptTracker.remove(buildMessageKey(record));
+    }
+
+    
+    @jakarta.annotation.PreDestroy
+    public void shutdown() {
+        log.info("Shutting down DLQ handler cleanup scheduler");
+        cleanupScheduler.shutdown();
+        try {
+            if (!cleanupScheduler.awaitTermination(5, TimeUnit.SECONDS)) {
+                cleanupScheduler.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            cleanupScheduler.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+        attemptTracker.clear();
     }
 
     private String buildMessageKey(ConsumerRecord<String, String> record) {

@@ -31,7 +31,7 @@ public class GlobalExceptionHandler {
         log.warn("Rate limit exceeded for: {}", ex.getKey());
         return ResponseEntity
                 .status(HttpStatus.TOO_MANY_REQUESTS)
-                .header("Retry-After", ex.getRetryAfterHeader())
+                .header("Retry-After", String.valueOf(ex.getRetryAfterSeconds()))
                 .body(new ErrorResponse(
                         "RATE_LIMIT_EXCEEDED",
                         "Too many requests. Please try again later.",

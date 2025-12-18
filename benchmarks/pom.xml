@@ -12,7 +12,7 @@
 
     <artifactId>benchmarks</artifactId>
     <packaging>jar</packaging>
-    <n>Benchmarks</n>
+    <name>Benchmarks</name>
     <description>JMH performance benchmarks for all patterns</description>
 
     <properties>
@@ -21,7 +21,7 @@
     </properties>
 
     <dependencies>
-        <!-- Pattern modules to benchmark -->
+        
         <dependency>
             <groupId>com.aporkolab</groupId>
             <artifactId>circuit-breaker</artifactId>
@@ -38,7 +38,7 @@
             <version>${project.version}</version>
         </dependency>
 
-        <!-- JMH -->
+        
         <dependency>
             <groupId>org.openjdk.jmh</groupId>
             <artifactId>jmh-core</artifactId>

@@ -28,9 +28,9 @@ public class PaymentService {
     private final ObjectMapper objectMapper;
     private final ConcurrentMap<String, Payment> payments = new ConcurrentHashMap<>();
     
-    // Simulated failure rate (for demo)
+    
     private final Random random = new Random();
-    private volatile double failureRate = 0.1; // 10% failure rate
+    private volatile double failureRate = 0.1; 
 
     public PaymentService(KafkaTemplate<String, String> kafkaTemplate, ObjectMapper objectMapper) {
         this.kafkaTemplate = kafkaTemplate;
@@ -39,10 +39,10 @@ public class PaymentService {
                 .name("payment-gateway")
                 .failureThreshold(3)
                 .successThreshold(2)
-                .openDurationMs(10000) // 10 seconds
+                .openDurationMs(10000) 
                 .build();
 
-        // Log state changes
+        
         paymentGatewayBreaker.onStateChange((from, to) -> 
             log.warn("Circuit Breaker state changed: {} -> {}", from, to)
         );
@@ -72,7 +72,7 @@ public class PaymentService {
         log.info("Processing payment for order: {}, amount: {}", orderId, amount);
 
         try {
-            // Use Circuit Breaker to call payment gateway
+            
             PaymentResult result = paymentGatewayBreaker.executeWithFallback(
                     () -> callPaymentGateway(orderId, customerId, amount),
                     () -> {
@@ -81,7 +81,7 @@ public class PaymentService {
                     }
             );
 
-            // Store payment
+            
             Payment payment = new Payment(
                     result.paymentId(),
                     orderId,
@@ -92,7 +92,7 @@ public class PaymentService {
             );
             payments.put(orderId, payment);
 
-            // Publish payment result
+            
             publishPaymentResult(payment);
 
         } catch (Exception e) {
@@ -106,17 +106,16 @@ public class PaymentService {
         }
     }
 
-    private PaymentResult callPaymentGateway(String orderId, String customerId, BigDecimal amount) 
-            throws PaymentGatewayException {
+    private PaymentResult callPaymentGateway(String orderId, String customerId, BigDecimal amount) {
         
-        // Simulate payment gateway call with configurable failure rate
+        
         simulateLatency();
         
         if (random.nextDouble() < failureRate) {
             throw new PaymentGatewayException("Payment gateway timeout");
         }
 
-        // Simulate successful payment
+        
         String paymentId = "PAY-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
         log.info("Payment successful: {} for order: {}", paymentId, orderId);
         
@@ -125,7 +124,7 @@ public class PaymentService {
 
     private void simulateLatency() {
         try {
-            Thread.sleep(50 + random.nextInt(100)); // 50-150ms latency
+            Thread.sleep(50 + random.nextInt(100)); 
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
@@ -169,7 +168,7 @@ public class PaymentService {
         }
     }
 
-    // API for demo/testing
+    
     public Payment getPayment(String orderId) {
         return payments.get(orderId);
     }
@@ -187,7 +186,7 @@ public class PaymentService {
         return failureRate;
     }
 
-    // Records
+    
     public record Payment(
             String paymentId,
             String orderId,
@@ -203,7 +202,7 @@ public class PaymentService {
         PENDING, COMPLETED, FAILED
     }
 
-    public static class PaymentGatewayException extends Exception {
+    public static class PaymentGatewayException extends RuntimeException {
         public PaymentGatewayException(String message) {
             super(message);
         }

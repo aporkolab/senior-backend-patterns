@@ -23,7 +23,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.core.KafkaOperations;
 import org.springframework.kafka.support.SendResult;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -35,7 +35,7 @@ class OutboxPatternTest {
     private OutboxRepository outboxRepository;
 
     @Mock
-    private KafkaTemplate<String, String> kafkaTemplate;
+    private KafkaOperations<String, String> kafkaOperations;
 
     private ObjectMapper objectMapper;
     private OutboxPublisher outboxPublisher;
@@ -45,7 +45,7 @@ class OutboxPatternTest {
     void setUp() {
         objectMapper = new ObjectMapper();
         outboxPublisher = new OutboxPublisher(outboxRepository, objectMapper);
-        outboxProcessor = new OutboxProcessor(outboxRepository, kafkaTemplate);
+        outboxProcessor = new OutboxProcessor(outboxRepository, kafkaOperations);
     }
 
     @Nested
@@ -152,7 +152,7 @@ class OutboxPatternTest {
         @DisplayName("should throw OutboxException on serialization failure")
         void shouldThrowOnSerializationFailure() {
             Object unserializable = new Object() {
-                // Anonymous class that Jackson can't serialize
+                
                 public Object getSelf() { return this; }
             };
 
@@ -187,7 +187,7 @@ class OutboxPatternTest {
 
             outboxProcessor.processOutbox();
 
-            verify(kafkaTemplate, never()).send(anyString(), anyString(), anyString());
+            verify(kafkaOperations, never()).send(anyString(), anyString(), anyString());
         }
 
         @Test
@@ -199,7 +199,7 @@ class OutboxPatternTest {
 
             outboxProcessor.processOutbox();
 
-            verify(kafkaTemplate).send(eq("order.events"), eq("order-123"), anyString());
+            verify(kafkaOperations).send(eq("order.events"), eq("order-123"), anyString());
         }
 
         @Test
@@ -220,7 +220,7 @@ class OutboxPatternTest {
         void shouldMarkAsFailedOnKafkaError() throws Exception {
             OutboxEvent event = createPendingEvent("Order", "order-123", "OrderCreated");
             when(outboxRepository.findPendingEventsForUpdate(anyInt())).thenReturn(List.of(event));
-            when(kafkaTemplate.send(anyString(), anyString(), anyString()))
+            when(kafkaOperations.send(anyString(), anyString(), anyString()))
                     .thenReturn(CompletableFuture.failedFuture(new RuntimeException("Kafka down")));
 
             outboxProcessor.processOutbox();
@@ -242,7 +242,7 @@ class OutboxPatternTest {
 
             outboxProcessor.processOutbox();
 
-            verify(kafkaTemplate, times(3)).send(anyString(), anyString(), anyString());
+            verify(kafkaOperations, times(3)).send(anyString(), anyString(), anyString());
         }
 
         @Test
@@ -254,10 +254,10 @@ class OutboxPatternTest {
             when(outboxRepository.findPendingEventsForUpdate(anyInt()))
                     .thenReturn(Arrays.asList(event1, event2));
             
-            // First fails, second succeeds
-            when(kafkaTemplate.send(eq("order.events"), eq("o1"), anyString()))
+            
+            when(kafkaOperations.send(eq("order.events"), eq("o1"), anyString()))
                     .thenReturn(CompletableFuture.failedFuture(new RuntimeException("fail")));
-            when(kafkaTemplate.send(eq("order.events"), eq("o2"), anyString()))
+            when(kafkaOperations.send(eq("order.events"), eq("o2"), anyString()))
                     .thenReturn(mockSuccessfulSend());
 
             outboxProcessor.processOutbox();
@@ -317,28 +317,29 @@ class OutboxPatternTest {
         }
     }
 
-    // Helper methods and classes
+    
     private OutboxEvent createPendingEvent(String aggregateType, String aggregateId, String eventType) {
         return new OutboxEvent(aggregateType, aggregateId, eventType, "{\"test\":true}");
     }
 
     @SuppressWarnings("unchecked")
     private void mockKafkaSend() {
-        when(kafkaTemplate.send(anyString(), anyString(), anyString()))
+        when(kafkaOperations.send(anyString(), anyString(), anyString()))
                 .thenReturn(mockSuccessfulSend());
     }
 
     @SuppressWarnings("unchecked")
     private CompletableFuture<SendResult<String, String>> mockSuccessfulSend() {
-        SendResult<String, String> result = mock(SendResult.class);
         RecordMetadata metadata = new RecordMetadata(
                 new TopicPartition("test", 0), 0L, 0, 0L, 0, 0
         );
-        when(result.getRecordMetadata()).thenReturn(metadata);
+        org.apache.kafka.clients.producer.ProducerRecord<String, String> producerRecord =
+                new org.apache.kafka.clients.producer.ProducerRecord<>("test", "key", "value");
+        SendResult<String, String> result = new SendResult<>(producerRecord, metadata);
         return CompletableFuture.completedFuture(result);
     }
 
-    // Test DTO
+    
     static class TestEvent {
         private String id;
         private int value;

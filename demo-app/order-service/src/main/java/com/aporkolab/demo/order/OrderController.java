@@ -141,12 +141,12 @@ public class OrderController {
             throw new RateLimitExceededException(
                     rateLimiter.getName(),
                     clientId,
-                    rateLimiter.getRemainingPermits(clientId),
-                    java.time.Duration.ofSeconds(1)
+                    java.time.Duration.ofSeconds(1),
+                    rateLimiter.getRemainingPermits(clientId)
             );
         }
     }
 
-    // Response DTOs
+    
     public record HealthResponse(String status, String service) {}
 }

@@ -11,23 +11,9 @@ import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
 
-import java.util.concurrent.Callable;
 import java.util.function.Supplier;
 
-/**
- * OpenTelemetry tracing wrapper for Circuit Breaker.
- * 
- * Automatically creates spans for:
- * - Circuit breaker executions
- * - State transitions
- * - Failures and rejections
- * 
- * Span attributes include:
- * - circuit_breaker.name
- * - circuit_breaker.state
- * - circuit_breaker.failure_count
- * - circuit_breaker.success_count
- */
+
 public class TracedCircuitBreaker {
 
     private static final String INSTRUMENTATION_NAME = "com.aporkolab.patterns.circuit-breaker";
@@ -43,7 +29,7 @@ public class TracedCircuitBreaker {
         this.delegate = delegate;
         this.tracer = tracer;
 
-        // Register state change listener for tracing
+        
         delegate.onStateChange((from, to) -> {
             Span stateChangeSpan = tracer.spanBuilder("circuit_breaker.state_change")
                     .setSpanKind(SpanKind.INTERNAL)
@@ -55,10 +41,8 @@ public class TracedCircuitBreaker {
         });
     }
 
-    /**
-     * Execute with tracing.
-     */
-    public <T> T execute(Callable<T> callable) throws Exception {
+    
+    public <T> T execute(Supplier<T> supplier) {
         Span span = tracer.spanBuilder("circuit_breaker.execute")
                 .setSpanKind(SpanKind.INTERNAL)
                 .setAttribute("circuit_breaker.name", delegate.getName())
@@ -66,7 +50,7 @@ public class TracedCircuitBreaker {
                 .startSpan();
 
         try (Scope scope = span.makeCurrent()) {
-            T result = delegate.execute(callable);
+            T result = delegate.execute(supplier);
             span.setAttribute("circuit_breaker.result", "success");
             span.setStatus(StatusCode.OK);
             return result;
@@ -78,7 +62,7 @@ public class TracedCircuitBreaker {
             span.recordException(e);
             throw e;
 
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             span.setAttribute("circuit_breaker.result", "failure");
             span.setAttribute("circuit_breaker.failure_count", delegate.getFailureCount());
             span.setStatus(StatusCode.ERROR, e.getMessage());
@@ -91,10 +75,8 @@ public class TracedCircuitBreaker {
         }
     }
 
-    /**
-     * Execute with fallback and tracing.
-     */
-    public <T> T executeWithFallback(Callable<T> callable, Supplier<T> fallback) {
+    
+    public <T> T executeWithFallback(Supplier<T> supplier, Supplier<T> fallback) {
         Span span = tracer.spanBuilder("circuit_breaker.execute_with_fallback")
                 .setSpanKind(SpanKind.INTERNAL)
                 .setAttribute("circuit_breaker.name", delegate.getName())
@@ -102,14 +84,14 @@ public class TracedCircuitBreaker {
                 .startSpan();
 
         try (Scope scope = span.makeCurrent()) {
-            T result = delegate.executeWithFallback(callable, () -> {
+            T result = delegate.executeWithFallback(supplier, () -> {
                 span.setAttribute("circuit_breaker.fallback_used", true);
                 return fallback.get();
             });
             span.setStatus(StatusCode.OK);
             return result;
 
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             span.setStatus(StatusCode.ERROR, e.getMessage());
             span.recordException(e);
             throw e;
@@ -119,33 +101,25 @@ public class TracedCircuitBreaker {
         }
     }
 
-    /**
-     * Execute a runnable with tracing.
-     */
-    public void execute(Runnable runnable) throws Exception {
+    
+    public void execute(Runnable runnable) {
         execute(() -> {
             runnable.run();
             return null;
         });
     }
 
-    /**
-     * Get the underlying circuit breaker.
-     */
+    
     public CircuitBreaker getDelegate() {
         return delegate;
     }
 
-    /**
-     * Create a traced circuit breaker from an existing one.
-     */
+    
     public static TracedCircuitBreaker wrap(CircuitBreaker circuitBreaker) {
         return new TracedCircuitBreaker(circuitBreaker);
     }
 
-    /**
-     * Create a traced circuit breaker with custom tracer.
-     */
+    
     public static TracedCircuitBreaker wrap(CircuitBreaker circuitBreaker, Tracer tracer) {
         return new TracedCircuitBreaker(circuitBreaker, tracer);
     }

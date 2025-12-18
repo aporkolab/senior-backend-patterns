@@ -13,54 +13,22 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
-/**
- * Bulkhead pattern implementation for thread pool isolation.
- * 
- * Prevents one slow dependency from exhausting all application threads
- * by allocating a dedicated, limited thread pool per dependency.
- * 
- * Two bulkhead types supported:
- * 1. ThreadPool Bulkhead: Dedicated executor with bounded queue
- * 2. Semaphore Bulkhead: Limits concurrent calls without separate threads
- * 
- * Usage:
- * <pre>
- * Bulkhead bulkhead = Bulkhead.threadPool()
- *     .name("payment-service")
- *     .maxConcurrentCalls(10)
- *     .maxWaitDuration(Duration.ofMillis(500))
- *     .build();
- * 
- * String result = bulkhead.execute(() -> paymentService.process(order));
- * </pre>
- */
+
 public interface Bulkhead {
 
-    /**
-     * Executes the given supplier within the bulkhead.
-     *
-     * @throws BulkheadFullException if the bulkhead is full
-     */
+    
     <T> T execute(Supplier<T> supplier) throws BulkheadFullException;
 
-    /**
-     * Executes the given runnable within the bulkhead.
-     */
+    
     void execute(Runnable runnable) throws BulkheadFullException;
 
-    /**
-     * Submits a callable for async execution within the bulkhead.
-     */
+    
     <T> Future<T> submit(Callable<T> callable) throws BulkheadFullException;
 
-    /**
-     * Returns current metrics.
-     */
+    
     Metrics getMetrics();
 
-    /**
-     * Returns the bulkhead name.
-     */
+    
     String getName();
 
     static ThreadPoolBulkheadBuilder threadPool() {
@@ -71,9 +39,7 @@ public interface Bulkhead {
         return new SemaphoreBulkheadBuilder();
     }
 
-    /**
-     * Bulkhead metrics.
-     */
+    
     interface Metrics {
         int getAvailableConcurrentCalls();
         int getMaxAllowedConcurrentCalls();
@@ -81,7 +47,7 @@ public interface Bulkhead {
         long getRejectedCalls();
     }
 
-    // ==================== ThreadPool Bulkhead ====================
+    
 
     class ThreadPoolBulkhead implements Bulkhead {
         private final String name;
@@ -94,12 +60,17 @@ public interface Bulkhead {
             this.name = builder.name;
             this.maxConcurrentCalls = builder.maxConcurrentCalls;
             this.maxWaitDuration = builder.maxWaitDuration;
+
             
+            java.util.concurrent.BlockingQueue<Runnable> workQueue = builder.queueCapacity == 0
+                    ? new java.util.concurrent.SynchronousQueue<>()
+                    : new LinkedBlockingQueue<>(builder.queueCapacity);
+
             this.executor = new ThreadPoolExecutor(
                     builder.corePoolSize,
                     builder.maxConcurrentCalls,
                     60L, TimeUnit.SECONDS,
-                    new LinkedBlockingQueue<>(builder.queueCapacity),
+                    workQueue,
                     r -> {
                         Thread t = new Thread(r, "bulkhead-" + name + "-" + System.nanoTime());
                         t.setDaemon(true);
@@ -114,12 +85,17 @@ public interface Bulkhead {
 
         @Override
         public <T> T execute(Supplier<T> supplier) throws BulkheadFullException {
+            Future<T> future = null;
             try {
-                Future<T> future = executor.submit(supplier::get);
+                future = executor.submit(supplier::get);
                 return future.get(maxWaitDuration.toMillis(), TimeUnit.MILLISECONDS);
             } catch (RejectedExecutionException e) {
                 throw new BulkheadFullException(name, maxConcurrentCalls);
             } catch (Exception e) {
+                
+                if (future != null) {
+                    future.cancel(true);
+                }
                 throw new RuntimeException("Bulkhead execution failed", e);
             }
         }
@@ -159,7 +135,7 @@ public interface Bulkhead {
         }
     }
 
-    // ==================== Semaphore Bulkhead ====================
+    
 
     class SemaphoreBulkhead implements Bulkhead {
         private final String name;
@@ -224,7 +200,7 @@ public interface Bulkhead {
         }
     }
 
-    // ==================== Builders ====================
+    
 
     class ThreadPoolBulkheadBuilder {
         String name = "default";
@@ -290,7 +266,7 @@ public interface Bulkhead {
         }
     }
 
-    // ==================== Supporting Classes ====================
+    
 
     record MetricsImpl(
             int availableConcurrentCalls,

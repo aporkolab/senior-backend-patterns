@@ -11,11 +11,11 @@
     </parent>
 
     <artifactId>senior-backend-patterns-spring-boot-starter</artifactId>
-    <n>Senior Backend Patterns Spring Boot Starter</n>
+    <name>Senior Backend Patterns Spring Boot Starter</name>
     <description>Spring Boot auto-configuration for all backend patterns</description>
 
     <dependencies>
-        <!-- All pattern modules -->
+        
         <dependency>
             <groupId>com.aporkolab</groupId>
             <artifactId>circuit-breaker</artifactId>
@@ -57,7 +57,7 @@
             <version>${project.version}</version>
         </dependency>
 
-        <!-- Spring Boot -->
+        
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-autoconfigure</artifactId>
@@ -68,7 +68,7 @@
             <optional>true</optional>
         </dependency>
 
-        <!-- Micrometer (optional) -->
+        
         <dependency>
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-core</artifactId>
@@ -76,7 +76,7 @@
             <optional>true</optional>
         </dependency>
 
-        <!-- Testing -->
+        
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>

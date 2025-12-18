@@ -14,15 +14,7 @@ import java.util.concurrent.CompletableFuture;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/**
- * HTTP client with built-in retry, exponential backoff, and timeout handling.
- * 
- * Design decisions:
- * - Uses Java 21's HttpClient (no external dependencies)
- * - Exponential backoff with jitter to prevent thundering herd
- * - Only retries on transient failures (5xx, timeouts)
- * - Logs every retry attempt for observability
- */
+
 public class ResilientHttpClient {
 
     private static final Logger log = LoggerFactory.getLogger(ResilientHttpClient.class);
@@ -52,9 +44,7 @@ public class ResilientHttpClient {
         return new Builder();
     }
 
-    /**
-     * GET request with automatic retry on transient failures.
-     */
+    
     public HttpResponse<String> get(String path) throws HttpClientException {
         return get(path, Map.of());
     }
@@ -67,9 +57,7 @@ public class ResilientHttpClient {
         return executeWithRetry(requestBuilder.build());
     }
 
-    /**
-     * POST request with automatic retry on transient failures.
-     */
+    
     public HttpResponse<String> post(String path, String body) throws HttpClientException {
         return post(path, body, Map.of("Content-Type", "application/json"));
     }
@@ -82,9 +70,7 @@ public class ResilientHttpClient {
         return executeWithRetry(requestBuilder.build());
     }
 
-    /**
-     * Async GET for non-blocking scenarios.
-     */
+    
     public CompletableFuture<HttpResponse<String>> getAsync(String path) {
         return getAsync(path, Map.of());
     }
@@ -113,6 +99,13 @@ public class ResilientHttpClient {
                         sleep(backoff);
                         attempt++;
                         continue;
+                    } else {
+                        
+                        throw new HttpClientException(
+                                String.format("Request to %s failed after %d attempts with status %d",
+                                        request.uri(), attempt + 1, response.statusCode()),
+                                null
+                        );
                     }
                 }
                 return response;
@@ -140,15 +133,32 @@ public class ResilientHttpClient {
     private CompletableFuture<HttpResponse<String>> executeWithRetryAsync(HttpRequest request, int attempt) {
         return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
                 .thenCompose(response -> {
-                    if (isRetryableStatusCode(response.statusCode()) && attempt < maxRetries) {
-                        long backoff = calculateBackoff(attempt);
-                        log.warn("Retryable status {} - attempt {}/{}, backing off {}ms",
-                                response.statusCode(), attempt + 1, maxRetries, backoff);
-                        return delay(backoff).thenCompose(v -> executeWithRetryAsync(request, attempt + 1));
+                    if (isRetryableStatusCode(response.statusCode())) {
+                        if (attempt < maxRetries) {
+                            long backoff = calculateBackoff(attempt);
+                            log.warn("Retryable status {} - attempt {}/{}, backing off {}ms",
+                                    response.statusCode(), attempt + 1, maxRetries, backoff);
+                            return delay(backoff).thenCompose(v -> executeWithRetryAsync(request, attempt + 1));
+                        } else {
+                            
+                            return CompletableFuture.failedFuture(new HttpClientException(
+                                    String.format("Request failed after %d attempts with status %d",
+                                            attempt + 1, response.statusCode()),
+                                    null
+                            ));
+                        }
                     }
                     return CompletableFuture.completedFuture(response);
                 })
                 .exceptionallyCompose(ex -> {
+                    
+                    Throwable cause = ex instanceof java.util.concurrent.CompletionException ? ex.getCause() : ex;
+
+                    
+                    if (cause instanceof HttpClientException) {
+                        return CompletableFuture.failedFuture(cause);
+                    }
+
                     if (attempt < maxRetries) {
                         long backoff = calculateBackoff(attempt);
                         log.warn("Request failed - attempt {}/{}, backing off {}ms: {}",
@@ -165,10 +175,7 @@ public class ResilientHttpClient {
         return RETRYABLE_STATUS_CODES.contains(statusCode);
     }
 
-    /**
-     * Exponential backoff with jitter.
-     * Formula: min(maxBackoff, initialBackoff * 2^attempt) * (1 + random * jitterFactor)
-     */
+    
     private long calculateBackoff(int attempt) {
         long exponentialBackoff = (long) (initialBackoffMs * Math.pow(2, attempt));
         long cappedBackoff = Math.min(exponentialBackoff, maxBackoffMs);
@@ -198,7 +205,12 @@ public class ResilientHttpClient {
         private double jitterFactor = 0.2;
 
         public Builder baseUrl(String baseUrl) {
-            this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
+            
+            String trimmed = baseUrl;
+            while (trimmed.endsWith("/")) {
+                trimmed = trimmed.substring(0, trimmed.length() - 1);
+            }
+            this.baseUrl = trimmed;
             return this;
         }
 

@@ -8,8 +8,7 @@ import java.net.http.HttpResponse;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -20,40 +19,33 @@ import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.RecordedRequest;
 
-/**
- * Unit tests for ResilientHttpClient.
- * Uses MockWebServer to simulate various server behaviors.
- */
+
 class ResilientHttpClientTest {
-
-    private static MockWebServer mockServer;
-    private ResilientHttpClient client;
-
-    @BeforeAll
-    static void startServer() throws IOException {
-        mockServer = new MockWebServer();
-        mockServer.start();
-    }
-
-    @AfterAll
-    static void stopServer() throws IOException {
-        mockServer.shutdown();
-    }
-
-    @BeforeEach
-    void setUp() {
-        client = ResilientHttpClient.builder()
-                .baseUrl(mockServer.url("/").toString())
-                .maxRetries(3)
-                .initialBackoffMs(10) // Fast for tests
-                .maxBackoffMs(100)
-                .connectionTimeoutMs(1000)
-                .build();
-    }
 
     @Nested
     @DisplayName("Successful Requests")
     class SuccessfulRequests {
+
+        private MockWebServer mockServer;
+        private ResilientHttpClient client;
+
+        @BeforeEach
+        void setUp() throws IOException {
+            mockServer = new MockWebServer();
+            mockServer.start();
+            client = ResilientHttpClient.builder()
+                    .baseUrl(mockServer.url("/").toString())
+                    .maxRetries(3)
+                    .initialBackoffMs(10)
+                    .maxBackoffMs(100)
+                    .connectionTimeoutMs(1000)
+                    .build();
+        }
+
+        @AfterEach
+        void tearDown() throws IOException {
+            mockServer.shutdown();
+        }
 
         @Test
         @DisplayName("should return response on successful GET")
@@ -90,7 +82,7 @@ class ResilientHttpClientTest {
             HttpResponse<String> response = client.get("/bad");
 
             assertThat(response.statusCode()).isEqualTo(400);
-            // Second request should not be made (no retry on 4xx)
+            
             assertThat(mockServer.getRequestCount()).isEqualTo(1);
         }
     }
@@ -98,6 +90,27 @@ class ResilientHttpClientTest {
     @Nested
     @DisplayName("Retry Behavior")
     class RetryBehavior {
+
+        private MockWebServer mockServer;
+        private ResilientHttpClient client;
+
+        @BeforeEach
+        void setUp() throws IOException {
+            mockServer = new MockWebServer();
+            mockServer.start();
+            client = ResilientHttpClient.builder()
+                    .baseUrl(mockServer.url("/").toString())
+                    .maxRetries(3)
+                    .initialBackoffMs(10)
+                    .maxBackoffMs(100)
+                    .connectionTimeoutMs(1000)
+                    .build();
+        }
+
+        @AfterEach
+        void tearDown() throws IOException {
+            mockServer.shutdown();
+        }
 
         @Test
         @DisplayName("should retry on 500 status code")
@@ -110,7 +123,7 @@ class ResilientHttpClientTest {
 
             assertThat(response.statusCode()).isEqualTo(200);
             assertThat(response.body()).isEqualTo("success");
-            assertThat(mockServer.getRequestCount()).isGreaterThanOrEqualTo(3);
+            assertThat(mockServer.getRequestCount()).isEqualTo(3);
         }
 
         @Test
@@ -149,7 +162,7 @@ class ResilientHttpClientTest {
         @Test
         @DisplayName("should throw after max retries exceeded")
         void shouldThrowAfterMaxRetries() {
-            for (int i = 0; i <= 4; i++) { // 1 initial + 3 retries + buffer
+            for (int i = 0; i <= 4; i++) { 
                 mockServer.enqueue(new MockResponse().setResponseCode(500));
             }
 
@@ -171,13 +184,34 @@ class ResilientHttpClientTest {
 
             assertThatThrownBy(() -> zeroRetryClient.get("/no-retry"))
                     .isInstanceOf(HttpClientException.class)
-                    .hasMessageContaining("1 attempts"); // Only initial attempt
+                    .hasMessageContaining("1 attempts"); 
         }
     }
 
     @Nested
     @DisplayName("Async Requests")
     class AsyncRequests {
+
+        private MockWebServer mockServer;
+        private ResilientHttpClient client;
+
+        @BeforeEach
+        void setUp() throws IOException {
+            mockServer = new MockWebServer();
+            mockServer.start();
+            client = ResilientHttpClient.builder()
+                    .baseUrl(mockServer.url("/").toString())
+                    .maxRetries(3)
+                    .initialBackoffMs(10)
+                    .maxBackoffMs(100)
+                    .connectionTimeoutMs(1000)
+                    .build();
+        }
+
+        @AfterEach
+        void tearDown() throws IOException {
+            mockServer.shutdown();
+        }
 
         @Test
         @DisplayName("should complete async GET successfully")
@@ -223,6 +257,19 @@ class ResilientHttpClientTest {
     @DisplayName("Builder Validation")
     class BuilderValidation {
 
+        private MockWebServer mockServer;
+
+        @BeforeEach
+        void setUp() throws IOException {
+            mockServer = new MockWebServer();
+            mockServer.start();
+        }
+
+        @AfterEach
+        void tearDown() throws IOException {
+            mockServer.shutdown();
+        }
+
         @Test
         @DisplayName("should reject negative max retries")
         void shouldRejectNegativeMaxRetries() {
@@ -261,11 +308,11 @@ class ResilientHttpClientTest {
                     .build();
 
             mockServer.enqueue(new MockResponse().setResponseCode(200));
-            
+
             slashClient.get("/test");
-            
+
             RecordedRequest request = mockServer.takeRequest();
-            // Should not have double slash
+            
             assertThat(request.getPath()).doesNotContain("//");
         }
 
@@ -276,7 +323,7 @@ class ResilientHttpClientTest {
                     .baseUrl("http://localhost")
                     .jitterFactor(0)
                     .build();
-            // No exception means success
+            
             assertThat(noJitterClient).isNotNull();
         }
     }
@@ -288,32 +335,68 @@ class ResilientHttpClientTest {
         @Test
         @DisplayName("should apply exponential backoff")
         void shouldApplyExponentialBackoff() throws Exception {
-            AtomicInteger requestCount = new AtomicInteger(0);
-            long[] requestTimes = new long[4];
+            MockWebServer customServer = new MockWebServer();
+            customServer.start();
+            try {
+                AtomicInteger requestCount = new AtomicInteger(0);
+                long[] requestTimes = new long[4];
 
-            mockServer.setDispatcher(new Dispatcher() {
-                @Override
-                public MockResponse dispatch(RecordedRequest request) {
-                    int count = requestCount.getAndIncrement();
-                    requestTimes[count] = System.currentTimeMillis();
-                    if (count < 3) {
-                        return new MockResponse().setResponseCode(500);
+                customServer.setDispatcher(new Dispatcher() {
+                    @Override
+                    public MockResponse dispatch(RecordedRequest request) {
+                        int count = requestCount.getAndIncrement();
+                        if (count < requestTimes.length) {
+                            requestTimes[count] = System.currentTimeMillis();
+                        }
+                        if (count < 3) {
+                            return new MockResponse().setResponseCode(500);
+                        }
+                        return new MockResponse().setResponseCode(200).setBody("ok");
                     }
-                    return new MockResponse().setResponseCode(200).setBody("ok");
-                }
-            });
+                });
 
-            client.get("/backoff-test");
+                ResilientHttpClient backoffClient = ResilientHttpClient.builder()
+                        .baseUrl(customServer.url("/").toString())
+                        .maxRetries(3)
+                        .initialBackoffMs(10)
+                        .maxBackoffMs(100)
+                        .connectionTimeoutMs(1000)
+                        .build();
 
-            // Verify increasing delays between requests
-            // Note: actual times vary due to jitter, but should generally increase
-            assertThat(requestCount.get()).isEqualTo(4);
+                backoffClient.get("/backoff-test");
+
+                
+                assertThat(requestCount.get()).isEqualTo(4);
+            } finally {
+                customServer.shutdown();
+            }
         }
     }
 
     @Nested
     @DisplayName("Headers")
     class Headers {
+
+        private MockWebServer mockServer;
+        private ResilientHttpClient client;
+
+        @BeforeEach
+        void setUp() throws IOException {
+            mockServer = new MockWebServer();
+            mockServer.start();
+            client = ResilientHttpClient.builder()
+                    .baseUrl(mockServer.url("/").toString())
+                    .maxRetries(3)
+                    .initialBackoffMs(10)
+                    .maxBackoffMs(100)
+                    .connectionTimeoutMs(1000)
+                    .build();
+        }
+
+        @AfterEach
+        void tearDown() throws IOException {
+            mockServer.shutdown();
+        }
 
         @Test
         @DisplayName("should send custom headers with GET")

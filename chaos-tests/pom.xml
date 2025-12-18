@@ -11,11 +11,11 @@
     </parent>
 
     <artifactId>chaos-tests</artifactId>
-    <n>Chaos Engineering Tests</n>
+    <name>Chaos Engineering Tests</name>
     <description>Chaos engineering tests for resilience patterns</description>
 
     <dependencies>
-        <!-- Pattern modules to test -->
+        
         <dependency>
             <groupId>com.aporkolab</groupId>
             <artifactId>circuit-breaker</artifactId>
@@ -27,7 +27,7 @@
             <version>${project.version}</version>
         </dependency>
 
-        <!-- Testing -->
+        
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
@@ -46,7 +46,7 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
-                    <!-- Chaos tests run separately, not in normal build -->
+                    
                     <skipTests>true</skipTests>
                 </configuration>
             </plugin>

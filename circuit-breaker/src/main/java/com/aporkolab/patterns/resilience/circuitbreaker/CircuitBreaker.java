@@ -10,24 +10,15 @@ import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/**
- * Circuit breaker implementation for protecting against cascading failures.
- * 
- * Thread-safe, lock-free implementation using atomic operations.
- * 
- * Design decisions:
- * - Count-based failure detection (simpler, more predictable than time-window)
- * - Automatic state transitions based on thresholds
- * - Event callbacks for monitoring/alerting integration
- */
+
 public class CircuitBreaker {
 
     private static final Logger log = LoggerFactory.getLogger(CircuitBreaker.class);
 
     public enum State {
-        CLOSED,    // Normal operation
-        OPEN,      // Failing fast, rejecting all calls
-        HALF_OPEN  // Testing if service recovered
+        CLOSED,    
+        OPEN,      
+        HALF_OPEN  
     }
 
     private final String name;
@@ -41,7 +32,7 @@ public class CircuitBreaker {
     private final AtomicReference<Instant> openedAt = new AtomicReference<>();
     private final AtomicInteger halfOpenAttempts = new AtomicInteger(0);
 
-    private BiConsumer<State, State> stateChangeListener;
+    private volatile BiConsumer<State, State> stateChangeListener;
 
     private CircuitBreaker(Builder builder) {
         this.name = builder.name;
@@ -54,12 +45,7 @@ public class CircuitBreaker {
         return new Builder();
     }
 
-    /**
-     * Execute a supplier with circuit breaker protection.
-     * 
-     * @throws CircuitBreakerOpenException if circuit is open
-     * @throws RuntimeException if the supplier throws
-     */
+    
     public <T> T execute(Supplier<T> supplier) {
         if (!allowRequest()) {
             throw new CircuitBreakerOpenException(name);
@@ -75,9 +61,7 @@ public class CircuitBreaker {
         }
     }
 
-    /**
-     * Execute with fallback when circuit is open.
-     */
+    
     public <T> T executeWithFallback(Supplier<T> supplier, Supplier<T> fallback) {
         try {
             return execute(supplier);
@@ -87,9 +71,7 @@ public class CircuitBreaker {
         }
     }
 
-    /**
-     * Execute a runnable with circuit breaker protection.
-     */
+    
     public void execute(Runnable runnable) {
         execute(() -> {
             runnable.run();
@@ -97,9 +79,7 @@ public class CircuitBreaker {
         });
     }
 
-    /**
-     * Check if a request should be allowed through.
-     */
+    
     public boolean allowRequest() {
         State currentState = state.get();
 
@@ -115,7 +95,7 @@ public class CircuitBreaker {
                 return false;
 
             case HALF_OPEN:
-                // Allow limited requests in half-open state
+                
                 return halfOpenAttempts.incrementAndGet() <= successThreshold;
 
             default:
@@ -137,7 +117,7 @@ public class CircuitBreaker {
                 transitionTo(State.CLOSED);
             }
         } else if (currentState == State.CLOSED) {
-            // Reset failure count on success
+            
             failureCount.set(0);
         }
     }
@@ -146,7 +126,7 @@ public class CircuitBreaker {
         State currentState = state.get();
 
         if (currentState == State.HALF_OPEN) {
-            // Any failure in half-open reopens the circuit
+            
             transitionTo(State.OPEN);
         } else if (currentState == State.CLOSED) {
             int failures = failureCount.incrementAndGet();
@@ -183,28 +163,25 @@ public class CircuitBreaker {
         }
     }
 
-    /**
-     * Register a listener for state changes.
-     */
+    
     public void onStateChange(BiConsumer<State, State> listener) {
         this.stateChangeListener = listener;
     }
 
-    /**
-     * Manually reset the circuit breaker to closed state.
-     */
+    
     public void reset() {
         transitionTo(State.CLOSED);
+        
+        failureCount.set(0);
+        successCount.set(0);
     }
 
-    /**
-     * Manually trip the circuit breaker to open state.
-     */
+    
     public void trip() {
         transitionTo(State.OPEN);
     }
 
-    // Getters for monitoring
+    
     public String getName() {
         return name;
     }
@@ -215,6 +192,10 @@ public class CircuitBreaker {
 
     public int getFailureCount() {
         return failureCount.get();
+    }
+
+    public int getSuccessCount() {
+        return successCount.get();
     }
 
     public static class Builder {
