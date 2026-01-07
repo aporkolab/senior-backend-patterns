@@ -22,7 +22,7 @@ A comprehensive library of battle-tested patterns with **200+ unit tests**, **Mi
 │   ══════════════    │  Client             │       ════════════              │
 │   ┌───┐   ┌───┐     │  ════════════       │   Token Bucket │ Sliding Window │
 │   │ C ├──►│ O │     │  • Retry + Backoff  │   ┌─────────┐  │ ┌───────────┐  │
-│   │ L │   │ P │     │  • Circuit Breaker  │   │●●●●●○○○○│  │ │▓▓▓▓░░░░░░│  │
+│   │ L │   │ P │     │  • Circuit Breaker  │   │●●●●●○○○○│  │ │▓▓▓▓░░░░░░ │  │
 │   │ O │◄──┤ E │     │  • Timeout          │   └─────────┘  │ └───────────┘  │
 │   │ S │   │ N │     │  • Metrics          │   Refill: 10/s │ Window: 1min   │
 │   │ E │──►├───┤     │                     │                │                │
@@ -35,21 +35,21 @@ A comprehensive library of battle-tested patterns with **200+ unit tests**, **Mi
 ├───────────────────────────────────┬─────────────────────────────────────────┤
 │         Outbox Pattern            │        Dead Letter Queue                │
 │         ══════════════            │        ═════════════════                │
-│   ┌──────────┐    ┌─────────┐     │   ┌─────────┐    ┌──────────┐          │
-│   │  Order   │    │  Kafka  │     │   │ orders  │    │orders.dlq│          │
-│   │ Service  │───►│ Producer│     │   │  topic  │───►│  topic   │          │
-│   └──────────┘    └─────────┘     │   └─────────┘    └──────────┘          │
+│   ┌──────────┐    ┌─────────┐     │   ┌─────────┐    ┌──────────┐           │
+│   │  Order   │    │  Kafka  │     │   │ orders  │    │orders.dlq│           │
+│   │ Service  │───►│ Producer│     │   │  topic  │───►│  topic   │           │
+│   └──────────┘    └─────────┘     │   └─────────┘    └──────────┘           │
 │        │               ▲          │        │              │                 │
-│        ▼               │          │   ┌────┴────┐    ┌────┴─────┐          │
-│   ┌──────────┐    ┌────┴────┐     │   │TRANSIENT│    │PERMANENT │          │
-│   │ outbox_  │    │ Outbox  │     │   │VALIDATION│   │INFRA     │          │
-│   │ events   │───►│Processor│     │   │MAX_RETRY │   │UNKNOWN   │          │
-│   └──────────┘    └─────────┘     │   └─────────┘    └──────────┘          │
+│        ▼               │          │   ┌────┴────┐    ┌────┴─────┐           │
+│   ┌──────────┐    ┌────┴────┐     │   │TRANSIENT│    │PERMANENT │           │
+│   │ outbox_  │    │ Outbox  │     │   │VALIDATION│   │INFRA     │           │
+│   │ events   │───►│Processor│     │   │MAX_RETRY │   │UNKNOWN   │           │
+│   └──────────┘    └─────────┘     │   └─────────┘    └──────────┘           │
 │   SKIP LOCKED                     │   Failure Categorization                │
 ├───────────────────────────────────┴─────────────────────────────────────────┤
 │                         ASYNC PIPELINE                                      │
-│   ┌─────────┐     ┌─────────┐     ┌─────────┐                              │
-│   │ Fraud   │     │ Balance │     │Inventory│    Virtual Threads (Java 21) │
+│   ┌─────────┐     ┌─────────┐     ┌─────────┐                               │
+│   │ Fraud   │     │ Balance │     │Inventory│    Virtual Threads (Java 21)  │
 │   │ Check   │     │ Check   │     │ Check   │    Parallel execution         │
 │   └────┬────┘     └────┬────┘     └────┬────┘    Timeout per task           │
 │        └───────────────┼───────────────┘                                    │
@@ -434,7 +434,7 @@ MIT License - see [LICENSE](LICENSE)
 
 **Ádám Porkoláb**
 - GitHub: [@aporkolab](https://github.com/aporkolab)
-- LinkedIn: [Ádám Porkoláb](https://linkedin.com/in/aporkolab)
+- LinkedIn: [Ádám Porkoláb](https://linkedin.com/in/adamporkolab)
 
 ---
 
