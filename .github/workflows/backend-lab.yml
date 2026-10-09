@@ -45,9 +45,13 @@ jobs:
           persist-credentials: false
       - name: Build the same dev container and exercise the real services
         uses: devcontainers/ci@v0.3
+        env:
+          # The CLI generates its Dockerfile in /tmp, outside Bake's read scope.
+          COMPOSE_BAKE: 'false'
         with:
           push: never
           runCmd: |
+            set -euo pipefail
             python3 -m unittest discover -s scripts/tests -v
             ./lab start
             ./lab run
