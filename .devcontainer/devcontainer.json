@@ -1,0 +1,27 @@
+{
+  "name": "Break the backend",
+  "dockerComposeFile": "compose.yml",
+  "service": "workspace",
+  "workspaceFolder": "/workspaces/senior-backend-patterns",
+  "shutdownAction": "stopCompose",
+  "remoteUser": "vscode",
+  "hostRequirements": { "cpus": 2, "memory": "8gb" },
+  "forwardPorts": [8081, 8082, 8083],
+  "portsAttributes": {
+    "8081": { "label": "Orders: /swagger-ui.html", "onAutoForward": "notify" },
+    "8082": { "label": "Payments: /swagger-ui.html", "onAutoForward": "silent" },
+    "8083": { "label": "Notifications: /swagger-ui.html", "onAutoForward": "silent" }
+  },
+  "otherPortsAttributes": { "onAutoForward": "ignore" },
+  "initializeCommand": "python3 .devcontainer/init-lab-env.py",
+  "postCreateCommand": "./lab build",
+  "postStartCommand": "./lab start",
+  "waitFor": "postStartCommand",
+  "postAttachCommand": "./lab status",
+  "customizations": {
+    "vscode": {
+      "extensions": ["vscjava.vscode-java-pack"],
+      "settings": { "java.configuration.updateBuildConfiguration": "automatic" }
+    }
+  }
+}
