@@ -37,3 +37,7 @@ Thumbs.db
 # Test output
 test-output/
 surefire-reports/
+
+# Local guided-lab processes, logs, receipts and Python cache
+.lab/
+__pycache__/

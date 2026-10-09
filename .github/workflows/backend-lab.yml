@@ -1,0 +1,61 @@
+name: Break the backend lab
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.devcontainer/**'
+      - '.github/workflows/backend-lab.yml'
+      - 'lab'
+      - 'scripts/**'
+      - 'pom.xml'
+      - 'demo-app/**'
+      - 'circuit-breaker/**'
+      - 'outbox-pattern/**'
+      - 'dead-letter-queue/**'
+      - 'rate-limiter/**'
+  push:
+    branches: [main]
+    paths:
+      - '.devcontainer/**'
+      - '.github/workflows/backend-lab.yml'
+      - 'lab'
+      - 'scripts/**'
+      - 'pom.xml'
+      - 'demo-app/**'
+      - 'circuit-breaker/**'
+      - 'outbox-pattern/**'
+      - 'dead-letter-queue/**'
+      - 'rate-limiter/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-lab-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Build the same dev container and exercise the real services
+        uses: devcontainers/ci@v0.3
+        with:
+          push: never
+          runCmd: |
+            python3 -m unittest discover -s scripts/tests -v
+            ./lab start
+            ./lab run
+      - name: Show service logs on failure
+        if: failure()
+        run: |
+          for file in .lab/*.log; do
+            if [ -f "$file" ]; then
+              tail -n 80 "$file"
+            fi
+          done

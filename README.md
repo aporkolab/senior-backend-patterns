@@ -93,6 +93,12 @@ A comprehensive library of battle-tested patterns with **200+ unit tests**, **Mi
 
 ## 🚀 Quick Start
 
+### Break the backend in Codespaces
+
+[Open your own lab](https://codespaces.new/aporkolab/senior-backend-patterns), wait for the three services to start, then run `./lab run`. The guided experiment sends real orders through PostgreSQL and Kafka, opens the payment circuit, verifies recovery, and isolates a notification failure in the DLQ. Java 21, Maven and the required services are configured automatically.
+
+The lab uses your Codespaces allowance only when you launch it. See the [walkthrough and checks](docs/break-the-backend.md), including how to inspect the APIs, change thresholds and stop the environment.
+
 ### Maven Dependency
 
 ```xml
