@@ -15,7 +15,7 @@
     <description>OpenTelemetry distributed tracing for all patterns</description>
 
     <properties>
-        <opentelemetry.version>1.34.1</opentelemetry.version>
+        <opentelemetry.version>1.62.0</opentelemetry.version>
     </properties>
 
     <dependencies>
