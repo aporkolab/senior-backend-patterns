@@ -57,6 +57,7 @@
         <!-- Spring Boot BOM manages Spring, Jackson, Kafka, Micrometer, Logback, JUnit,
              Mockito, AssertJ, Testcontainers and the PostgreSQL driver. -->
         <spring-boot.version>4.1.2</spring-boot.version>
+        <opentelemetry.version>1.67.0</opentelemetry.version>
 
         <mockwebserver.version>5.5.1</mockwebserver.version>
 
@@ -70,6 +71,15 @@
 
     <dependencyManagement>
         <dependencies>
+            <!-- Keep the API, SDK, exporters and test helpers on the same release.
+                 This import takes precedence over Spring Boot's managed versions. -->
+            <dependency>
+                <groupId>io.opentelemetry</groupId>
+                <artifactId>opentelemetry-bom</artifactId>
+                <version>${opentelemetry.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
             <dependency>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-dependencies</artifactId>
