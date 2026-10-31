@@ -27,15 +27,15 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.kafka.core.DefaultKafkaProducerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
-import org.testcontainers.containers.KafkaContainer;
+import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
 import com.aporkolab.patterns.messaging.dlq.DeadLetterQueueHandler;
 import com.aporkolab.patterns.messaging.dlq.FailureType;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Integration tests for Dead Letter Queue with real Kafka.
@@ -50,7 +50,7 @@ class DeadLetterQueueIntegrationTest {
 
     @Container
     static KafkaContainer kafka = new KafkaContainer(
-            DockerImageName.parse("confluentinc/cp-kafka:7.4.0"));
+            DockerImageName.parse("apache/kafka:4.1.0"));
 
     private static KafkaTemplate<String, String> kafkaTemplate;
     private static KafkaConsumer<String, String> mainConsumer;
@@ -64,7 +64,6 @@ class DeadLetterQueueIntegrationTest {
     @BeforeAll
     static void setupInfrastructure() throws Exception {
         objectMapper = new ObjectMapper();
-        objectMapper.findAndRegisterModules();
 
         // Create topics
         Properties adminProps = new Properties();
@@ -160,11 +159,11 @@ class DeadLetterQueueIntegrationTest {
 
             JsonNode dlqMessage = objectMapper.readTree(dlqPayload);
             assertThat(dlqMessage.has("originalTopic")).isTrue();
-            assertThat(dlqMessage.get("originalTopic").asText()).isEqualTo(MAIN_TOPIC);
+            assertThat(dlqMessage.get("originalTopic").asString()).isEqualTo(MAIN_TOPIC);
             assertThat(dlqMessage.has("failureReason")).isTrue();
-            assertThat(dlqMessage.get("failureReason").asText()).contains("Validation failed");
+            assertThat(dlqMessage.get("failureReason").asString()).contains("Validation failed");
             assertThat(dlqMessage.has("failureType")).isTrue();
-            assertThat(dlqMessage.get("failureType").asText()).isEqualTo("VALIDATION_ERROR");
+            assertThat(dlqMessage.get("failureType").asString()).isEqualTo("VALIDATION_ERROR");
         });
     }
 
@@ -197,8 +196,8 @@ class DeadLetterQueueIntegrationTest {
                     JsonNode dlqMessage = objectMapper.readTree(record.value());
 
                     // Original message preserved
-                    assertThat(dlqMessage.get("originalKey").asText()).isEqualTo(key);
-                    assertThat(dlqMessage.get("originalValue").asText()).isEqualTo(originalPayload);
+                    assertThat(dlqMessage.get("originalKey").asString()).isEqualTo(key);
+                    assertThat(dlqMessage.get("originalValue").asString()).isEqualTo(originalPayload);
                     assertThat(dlqMessage.has("originalPartition")).isTrue();
                     assertThat(dlqMessage.has("originalOffset")).isTrue();
                 }
@@ -274,7 +273,7 @@ class DeadLetterQueueIntegrationTest {
             for (ConsumerRecord<String, String> record : dlqRecords) {
                 JsonNode msg = objectMapper.readTree(record.value());
                 if (msg.has("failureType")) {
-                    failureTypes.add(msg.get("failureType").asText());
+                    failureTypes.add(msg.get("failureType").asString());
                 }
             }
 

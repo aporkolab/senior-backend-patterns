@@ -14,10 +14,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import okhttp3.mockwebserver.Dispatcher;
-import okhttp3.mockwebserver.MockResponse;
-import okhttp3.mockwebserver.MockWebServer;
-import okhttp3.mockwebserver.RecordedRequest;
+import mockwebserver3.Dispatcher;
+import mockwebserver3.MockResponse;
+import mockwebserver3.MockWebServer;
+import mockwebserver3.RecordedRequest;
 
 
 class ResilientHttpClientTest {
@@ -43,16 +43,16 @@ class ResilientHttpClientTest {
         }
 
         @AfterEach
-        void tearDown() throws IOException {
-            mockServer.shutdown();
+        void tearDown() {
+            mockServer.close();
         }
 
         @Test
         @DisplayName("should return response on successful GET")
         void shouldReturnResponseOnSuccessfulGet() throws Exception {
-            mockServer.enqueue(new MockResponse()
-                    .setResponseCode(200)
-                    .setBody("{\"status\":\"ok\"}"));
+            mockServer.enqueue(new MockResponse.Builder()
+                    .code(200)
+                    .body("{\"status\":\"ok\"}").build());
 
             HttpResponse<String> response = client.get("/test");
 
@@ -63,9 +63,9 @@ class ResilientHttpClientTest {
         @Test
         @DisplayName("should return response on successful POST")
         void shouldReturnResponseOnSuccessfulPost() throws Exception {
-            mockServer.enqueue(new MockResponse()
-                    .setResponseCode(201)
-                    .setBody("{\"id\":123}"));
+            mockServer.enqueue(new MockResponse.Builder()
+                    .code(201)
+                    .body("{\"id\":123}").build());
 
             HttpResponse<String> response = client.post("/create", "{\"name\":\"test\"}");
 
@@ -76,8 +76,8 @@ class ResilientHttpClientTest {
         @Test
         @DisplayName("should handle 4xx responses without retry")
         void shouldHandle4xxWithoutRetry() throws Exception {
-            mockServer.enqueue(new MockResponse().setResponseCode(400).setBody("Bad Request"));
-            mockServer.enqueue(new MockResponse().setResponseCode(200).setBody("OK"));
+            mockServer.enqueue(new MockResponse.Builder().code(400).body("Bad Request").build());
+            mockServer.enqueue(new MockResponse.Builder().code(200).body("OK").build());
 
             HttpResponse<String> response = client.get("/bad");
 
@@ -108,16 +108,16 @@ class ResilientHttpClientTest {
         }
 
         @AfterEach
-        void tearDown() throws IOException {
-            mockServer.shutdown();
+        void tearDown() {
+            mockServer.close();
         }
 
         @Test
         @DisplayName("should retry on 500 status code")
         void shouldRetryOn500() throws Exception {
-            mockServer.enqueue(new MockResponse().setResponseCode(500));
-            mockServer.enqueue(new MockResponse().setResponseCode(500));
-            mockServer.enqueue(new MockResponse().setResponseCode(200).setBody("success"));
+            mockServer.enqueue(new MockResponse.Builder().code(500).build());
+            mockServer.enqueue(new MockResponse.Builder().code(500).build());
+            mockServer.enqueue(new MockResponse.Builder().code(200).body("success").build());
 
             HttpResponse<String> response = client.get("/flaky");
 
@@ -129,8 +129,8 @@ class ResilientHttpClientTest {
         @Test
         @DisplayName("should retry on 502 status code")
         void shouldRetryOn502() throws Exception {
-            mockServer.enqueue(new MockResponse().setResponseCode(502));
-            mockServer.enqueue(new MockResponse().setResponseCode(200).setBody("ok"));
+            mockServer.enqueue(new MockResponse.Builder().code(502).build());
+            mockServer.enqueue(new MockResponse.Builder().code(200).body("ok").build());
 
             HttpResponse<String> response = client.get("/gateway");
 
@@ -140,8 +140,8 @@ class ResilientHttpClientTest {
         @Test
         @DisplayName("should retry on 503 status code")
         void shouldRetryOn503() throws Exception {
-            mockServer.enqueue(new MockResponse().setResponseCode(503));
-            mockServer.enqueue(new MockResponse().setResponseCode(200).setBody("ok"));
+            mockServer.enqueue(new MockResponse.Builder().code(503).build());
+            mockServer.enqueue(new MockResponse.Builder().code(200).body("ok").build());
 
             HttpResponse<String> response = client.get("/unavailable");
 
@@ -151,8 +151,8 @@ class ResilientHttpClientTest {
         @Test
         @DisplayName("should retry on 504 status code")
         void shouldRetryOn504() throws Exception {
-            mockServer.enqueue(new MockResponse().setResponseCode(504));
-            mockServer.enqueue(new MockResponse().setResponseCode(200).setBody("ok"));
+            mockServer.enqueue(new MockResponse.Builder().code(504).build());
+            mockServer.enqueue(new MockResponse.Builder().code(200).body("ok").build());
 
             HttpResponse<String> response = client.get("/timeout");
 
@@ -163,7 +163,7 @@ class ResilientHttpClientTest {
         @DisplayName("should throw after max retries exceeded")
         void shouldThrowAfterMaxRetries() {
             for (int i = 0; i <= 4; i++) { 
-                mockServer.enqueue(new MockResponse().setResponseCode(500));
+                mockServer.enqueue(new MockResponse.Builder().code(500).build());
             }
 
             assertThatThrownBy(() -> client.get("/always-failing"))
@@ -180,7 +180,7 @@ class ResilientHttpClientTest {
                     .maxRetries(0)
                     .build();
 
-            mockServer.enqueue(new MockResponse().setResponseCode(500));
+            mockServer.enqueue(new MockResponse.Builder().code(500).build());
 
             assertThatThrownBy(() -> zeroRetryClient.get("/no-retry"))
                     .isInstanceOf(HttpClientException.class)
@@ -209,16 +209,16 @@ class ResilientHttpClientTest {
         }
 
         @AfterEach
-        void tearDown() throws IOException {
-            mockServer.shutdown();
+        void tearDown() {
+            mockServer.close();
         }
 
         @Test
         @DisplayName("should complete async GET successfully")
         void shouldCompleteAsyncGet() throws Exception {
-            mockServer.enqueue(new MockResponse()
-                    .setResponseCode(200)
-                    .setBody("async-result"));
+            mockServer.enqueue(new MockResponse.Builder()
+                    .code(200)
+                    .body("async-result").build());
 
             CompletableFuture<HttpResponse<String>> future = client.getAsync("/async");
             HttpResponse<String> response = future.get();
@@ -230,8 +230,8 @@ class ResilientHttpClientTest {
         @Test
         @DisplayName("should retry async request on 5xx")
         void shouldRetryAsyncOn5xx() throws Exception {
-            mockServer.enqueue(new MockResponse().setResponseCode(503));
-            mockServer.enqueue(new MockResponse().setResponseCode(200).setBody("recovered"));
+            mockServer.enqueue(new MockResponse.Builder().code(503).build());
+            mockServer.enqueue(new MockResponse.Builder().code(200).body("recovered").build());
 
             CompletableFuture<HttpResponse<String>> future = client.getAsync("/async-flaky");
             HttpResponse<String> response = future.get();
@@ -243,7 +243,7 @@ class ResilientHttpClientTest {
         @DisplayName("should fail async after max retries")
         void shouldFailAsyncAfterMaxRetries() {
             for (int i = 0; i <= 4; i++) {
-                mockServer.enqueue(new MockResponse().setResponseCode(500));
+                mockServer.enqueue(new MockResponse.Builder().code(500).build());
             }
 
             CompletableFuture<HttpResponse<String>> future = client.getAsync("/async-fail");
@@ -266,8 +266,8 @@ class ResilientHttpClientTest {
         }
 
         @AfterEach
-        void tearDown() throws IOException {
-            mockServer.shutdown();
+        void tearDown() {
+            mockServer.close();
         }
 
         @Test
@@ -307,13 +307,13 @@ class ResilientHttpClientTest {
                     .baseUrl(mockServer.url("/").toString() + "/")
                     .build();
 
-            mockServer.enqueue(new MockResponse().setResponseCode(200));
+            mockServer.enqueue(new MockResponse.Builder().code(200).build());
 
             slashClient.get("/test");
 
             RecordedRequest request = mockServer.takeRequest();
             
-            assertThat(request.getPath()).doesNotContain("//");
+            assertThat(request.getTarget()).doesNotContain("//");
         }
 
         @Test
@@ -349,9 +349,9 @@ class ResilientHttpClientTest {
                             requestTimes[count] = System.currentTimeMillis();
                         }
                         if (count < 3) {
-                            return new MockResponse().setResponseCode(500);
+                            return new MockResponse.Builder().code(500).build();
                         }
-                        return new MockResponse().setResponseCode(200).setBody("ok");
+                        return new MockResponse.Builder().code(200).body("ok").build();
                     }
                 });
 
@@ -368,7 +368,7 @@ class ResilientHttpClientTest {
                 
                 assertThat(requestCount.get()).isEqualTo(4);
             } finally {
-                customServer.shutdown();
+                customServer.close();
             }
         }
     }
@@ -394,14 +394,14 @@ class ResilientHttpClientTest {
         }
 
         @AfterEach
-        void tearDown() throws IOException {
-            mockServer.shutdown();
+        void tearDown() {
+            mockServer.close();
         }
 
         @Test
         @DisplayName("should send custom headers with GET")
         void shouldSendCustomHeadersWithGet() throws Exception {
-            mockServer.enqueue(new MockResponse().setResponseCode(200));
+            mockServer.enqueue(new MockResponse.Builder().code(200).build());
 
             client.get("/headers", java.util.Map.of(
                     "X-Custom-Header", "custom-value",
@@ -409,14 +409,14 @@ class ResilientHttpClientTest {
             ));
 
             RecordedRequest request = mockServer.takeRequest();
-            assertThat(request.getHeader("X-Custom-Header")).isEqualTo("custom-value");
-            assertThat(request.getHeader("Authorization")).isEqualTo("Bearer token123");
+            assertThat(request.getHeaders().get("X-Custom-Header")).isEqualTo("custom-value");
+            assertThat(request.getHeaders().get("Authorization")).isEqualTo("Bearer token123");
         }
 
         @Test
         @DisplayName("should send custom headers with POST")
         void shouldSendCustomHeadersWithPost() throws Exception {
-            mockServer.enqueue(new MockResponse().setResponseCode(200));
+            mockServer.enqueue(new MockResponse.Builder().code(200).build());
 
             client.post("/headers", "{}", java.util.Map.of(
                     "Content-Type", "application/json",
@@ -424,19 +424,19 @@ class ResilientHttpClientTest {
             ));
 
             RecordedRequest request = mockServer.takeRequest();
-            assertThat(request.getHeader("Content-Type")).isEqualTo("application/json");
-            assertThat(request.getHeader("X-Request-Id")).isEqualTo("req-123");
+            assertThat(request.getHeaders().get("Content-Type")).isEqualTo("application/json");
+            assertThat(request.getHeaders().get("X-Request-Id")).isEqualTo("req-123");
         }
 
         @Test
         @DisplayName("should use default Content-Type for POST")
         void shouldUseDefaultContentType() throws Exception {
-            mockServer.enqueue(new MockResponse().setResponseCode(200));
+            mockServer.enqueue(new MockResponse.Builder().code(200).build());
 
             client.post("/default-headers", "{\"test\":true}");
 
             RecordedRequest request = mockServer.takeRequest();
-            assertThat(request.getHeader("Content-Type")).isEqualTo("application/json");
+            assertThat(request.getHeaders().get("Content-Type")).isEqualTo("application/json");
         }
     }
 }
