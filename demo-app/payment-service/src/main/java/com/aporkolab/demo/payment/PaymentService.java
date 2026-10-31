@@ -14,8 +14,8 @@ import org.springframework.stereotype.Service;
 
 import com.aporkolab.patterns.resilience.circuitbreaker.CircuitBreaker;
 import com.aporkolab.patterns.resilience.circuitbreaker.CircuitBreakerOpenException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 @Service
 public class PaymentService {
@@ -52,7 +52,7 @@ public class PaymentService {
     public void handleOrderEvent(String message) {
         try {
             JsonNode event = objectMapper.readTree(message);
-            String eventType = event.get("eventType").asText();
+            String eventType = event.get("eventType").asString();
 
             if ("OrderCreated".equals(eventType)) {
                 processPayment(event);
@@ -63,11 +63,11 @@ public class PaymentService {
     }
 
     private void processPayment(JsonNode event) {
-        String orderId = event.get("aggregateId").asText();
+        String orderId = event.get("aggregateId").asString();
         JsonNode payload = event.get("payload");
         
-        String customerId = payload.get("customerId").asText();
-        BigDecimal amount = new BigDecimal(payload.get("amount").asText());
+        String customerId = payload.get("customerId").asString();
+        BigDecimal amount = new BigDecimal(payload.get("amount").asString());
 
         log.info("Processing payment for order: {}, amount: {}", orderId, amount);
 

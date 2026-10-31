@@ -8,8 +8,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 
 
 @Component
@@ -39,7 +39,7 @@ public class OutboxPublisher {
             log.debug("Outbox event created: type={}, aggregateId={}, eventType={}",
                     aggregateType, aggregateId, eventType);
 
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             throw new OutboxException("Failed to serialize event payload", e);
         }
     }

@@ -14,8 +14,8 @@ import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 @Service
 public class NotificationService {
@@ -45,7 +45,7 @@ public class NotificationService {
 
         try {
             JsonNode event = objectMapper.readTree(record.value());
-            String eventType = event.get("eventType").asText();
+            String eventType = event.get("eventType").asString();
 
             if ("PaymentCompleted".equals(eventType)) {
                 sendPaymentConfirmation(event);
@@ -72,7 +72,7 @@ public class NotificationService {
 
         try {
             JsonNode event = objectMapper.readTree(record.value());
-            String eventType = event.get("eventType").asText();
+            String eventType = event.get("eventType").asString();
 
             if ("OrderCreated".equals(eventType)) {
                 sendOrderConfirmation(event);
@@ -90,8 +90,8 @@ public class NotificationService {
         simulateFailure();
         
         JsonNode payload = event.get("payload");
-        String customerId = payload.get("customerId").asText();
-        String orderId = payload.get("orderId").asText();
+        String customerId = payload.get("customerId").asString();
+        String orderId = payload.get("orderId").asString();
 
         Notification notification = new Notification(
                 UUID.randomUUID().toString(),
@@ -109,8 +109,8 @@ public class NotificationService {
         simulateFailure();
         
         JsonNode payload = event.get("payload");
-        String orderId = payload.get("orderId").asText();
-        String newStatus = payload.get("newStatus").asText();
+        String orderId = payload.get("orderId").asString();
+        String newStatus = payload.get("newStatus").asString();
 
         // Would need customerId from somewhere - simplified for demo
         Notification notification = new Notification(
@@ -126,10 +126,10 @@ public class NotificationService {
     }
 
     private void sendPaymentConfirmation(JsonNode event) throws TransientException, ValidationException {
-        String customerId = event.get("customerId").asText();
-        String orderId = event.get("orderId").asText();
-        String paymentId = event.get("paymentId").asText();
-        String amount = event.get("amount").asText();
+        String customerId = event.get("customerId").asString();
+        String orderId = event.get("orderId").asString();
+        String paymentId = event.get("paymentId").asString();
+        String amount = event.get("amount").asString();
 
         // Validate
         if (customerId == null || customerId.isBlank()) {
@@ -151,9 +151,9 @@ public class NotificationService {
     }
 
     private void sendPaymentFailureNotification(JsonNode event) throws TransientException {
-        String customerId = event.get("customerId").asText();
-        String orderId = event.get("orderId").asText();
-        String message = event.has("message") ? event.get("message").asText() : "Unknown error";
+        String customerId = event.get("customerId").asString();
+        String orderId = event.get("orderId").asString();
+        String message = event.has("message") ? event.get("message").asString() : "Unknown error";
 
         simulateFailure();
 

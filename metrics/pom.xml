@@ -31,14 +31,12 @@
         <dependency>
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-core</artifactId>
-            <version>1.15.12</version>
         </dependency>
 
         <!-- Optional: Prometheus registry -->
         <dependency>
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-registry-prometheus</artifactId>
-            <version>1.15.12</version>
             <optional>true</optional>
         </dependency>
 
@@ -56,7 +54,6 @@
         <dependency>
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-test</artifactId>
-            <version>1.15.12</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
